@@ -20,6 +20,7 @@ import math
 import pathlib
 from typing import Dict, Optional, Sequence
 from enum import auto, IntEnum
+import random
 
 import numpy as np
 import torch
@@ -372,9 +373,13 @@ def make_supervised_data_module(
 
     train_json = json.load(open(data_args.data_path, "r"))
     train_dataset = dataset_cls(train_json, tokenizer=tokenizer)
+    random.shuffle(train_json)
+    train_json = train_json[:2000] # TODO: DELETE AFTER TESTS!!
 
     if data_args.eval_data_path:
         eval_json = json.load(open(data_args.eval_data_path, "r"))
+        eval_size = int(len(train_dataset) / 10)
+        eval_json = eval_json[:eval_size]
         eval_dataset = dataset_cls(eval_json, tokenizer=tokenizer)
     else:
         eval_dataset = None
@@ -422,6 +427,12 @@ def train():
     if tokenizer.pad_token != tokenizer.unk_token:
         tokenizer.pad_token = tokenizer.unk_token
 
+    # BSC: Adding special tokens
+    # tokenizer.add_special_tokens({"additional_special_tokens": ["<|im_start|>"]})
+    # tokenizer.add_special_tokens({"eos_token": "<|im_end|>"})
+    # model.resize_token_embeddings(len(tokenizer))
+    # model.config.eos_token_id = tokenizer.eos_token_id
+    
     if model_args.add_chat_template: # BSC: for using chat template
         tokenizer.chat_template = CHAT_TEMPLATE
 
