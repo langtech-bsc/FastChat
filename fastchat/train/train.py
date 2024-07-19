@@ -19,6 +19,7 @@ import json
 import math
 import pathlib
 from typing import Dict, Optional, Sequence
+from enum import auto, IntEnum
 
 import numpy as np
 import torch
@@ -27,11 +28,24 @@ import transformers
 from transformers import Trainer
 from transformers.trainer_pt_utils import LabelSmoother
 
-from fastchat.conversation import SeparatorStyle
-from fastchat.model.model_adapter import get_conversation_template
+import os
+import sys
+current_directory = os.path.dirname(os.path.realpath(__file__))
+parent_directory = os.path.dirname(current_directory + '/../../..')
+sys.path.append(parent_directory)
+
+from fastchat.conversation import SeparatorStyle, get_conv_template
 
 IGNORE_TOKEN_ID = LabelSmoother.ignore_index
 
+CHAT_TEMPLATE = "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
+# CHAT_TEMPLATE = "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + ('<|im_end|>' if message['role'] in ['user', 'system'] else eos_token) + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
+
+class PreProcessStyle(IntEnum):
+    """Separator styles."""
+
+    BSC_CHAT = auto()
+    DEFAULT = auto()
 
 @dataclass
 class ModelArguments:
@@ -44,6 +58,13 @@ class ModelArguments:
     )
     padding_side: str = field(
         default="right", metadata={"help": "The padding side in tokenizer"}
+    )
+
+    add_chat_template: Optional[bool] = field(
+        default=False, 
+        metadata={
+            "help": f"Whether or not to add and train the model with the chat template: {CHAT_TEMPLATE}"
+        }
     )
 
 
@@ -89,13 +110,103 @@ def trainer_save_model_safe(trainer: transformers.Trainer):
         trainer.save_model()
 
 
+def preprocess_bsc_chat(
+    sources,
+    metadata,
+    tokenizer: transformers.PreTrainedTokenizer,
+) -> Dict:
+    conv = get_conv_template("bsc_chat_template")
+    assert conv.sep_style == SeparatorStyle.BSC_CHAT_TEMPLATE
+    roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
+
+    
+    conversations = []
+    for i, source in enumerate(sources):
+        if roles[source[0]["from"]] != conv.roles[0]:
+            # Skip the first one if it is not from human
+            source = source[1:]
+
+        conv.messages = []
+        for j, sentence in enumerate(source):
+            role = roles[sentence["from"]]
+            assert role == conv.roles[j % 2], f"{i}, \nErroneous source: {source}"
+            conv.append_message(role, sentence["value"])
+        conversations.append(conv.get_prompt(tokenizer=tokenizer, metadata=metadata))
+
+    # Tokenize conversations
+    tok_output = tokenizer(
+        conversations,
+        return_tensors="pt",
+        padding="max_length",
+        max_length=tokenizer.model_max_length,
+        truncation=True,
+    )
+    input_ids = tok_output.input_ids
+    att_masks = tok_output.attention_mask # Only used for ignoring truncated sequences.
+    targets = input_ids.clone()
+    
+    # Mask targets. Only compute loss on the assistant outputs.
+    sep = conv.sep + conv.roles[1] + "\n"
+
+    for j, (conversation, target) in enumerate(zip(conversations, targets)):
+        total_len = int(target.ne(tokenizer.pad_token_id).sum())
+        cur_len = 0
+            
+        gemma_tok = type(tokenizer) == transformers.models.gemma.tokenization_gemma.GemmaTokenizer
+        gemma_tok_fast = type(tokenizer) == transformers.models.gemma.tokenization_gemma_fast.GemmaTokenizerFast
+        llama_tok_fast = type(tokenizer) == transformers.models.llama.tokenization_llama_fast.LlamaTokenizerFast # Mistral tokenizer
+        if gemma_tok or gemma_tok_fast or llama_tok_fast:
+            cur_len += 1 # Gemma Tokenizer adds bos token
+        target[:cur_len] = IGNORE_TOKEN_ID
+
+        turns = [text + conv.sep2 for text in conversation.split(conv.sep2) if text]
+        for turn in turns:
+            turn_len = len(tokenizer.tokenize(turn))
+            parts = turn.split(sep)
+            
+            if len(parts) == 2:
+                parts[0] += sep
+            elif len(parts) != 1:
+                raise Exception(f"Error: found more the one or zero {sep} in Conversation:\n{conversation}\nTrun:\n{turn}")
+            
+            instruction_len = len(tokenizer.tokenize(parts[0]))
+
+            # Ignore the user instructions
+            target[cur_len : cur_len + instruction_len] = IGNORE_TOKEN_ID
+            cur_len += turn_len
+
+        target[cur_len:] = IGNORE_TOKEN_ID
+
+        print("\n CONVERSATION: \n", conversation, "\n Optimization in ---------->\n",tokenizer.decode([el for i,el in enumerate(target) if el != -100]), "\n")
+        # print("\n Optimization in ---------->",tokenizer.decode([el for i,el in enumerate(target) if el != -100]), "\n")
+        optimization_printed=True
+
+        if False:  # Inspect and check the correctness of masking
+            z = target.clone()
+            z = torch.where(z == IGNORE_TOKEN_ID, tokenizer.unk_token_id, z)
+            rank0_print(tokenizer.decode(z))
+            exit()
+
+        if cur_len < tokenizer.model_max_length:
+            if cur_len != total_len:
+                target[:] = IGNORE_TOKEN_ID
+                rank0_print(
+                    f"WARNING: tokenization mismatch: {cur_len} vs. {total_len}."
+                    # f" #turn = {len(turns) - 1}. (ignored)"
+                )
+
+    return dict(
+        input_ids=input_ids,
+        labels=targets,
+        attention_mask=input_ids.ne(tokenizer.pad_token_id),
+    )
+
 def preprocess(
     sources,
     tokenizer: transformers.PreTrainedTokenizer,
 ) -> Dict:
-    conv = get_conversation_template("vicuna")
+    conv = get_conv_template("vicuna")
     roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
-
     # Apply prompt templates
     conversations = []
     for i, source in enumerate(sources):
@@ -177,6 +288,25 @@ def preprocess(
     )
 
 
+def preprocess_conditional(
+    data,
+    tokenizer: transformers.PreTrainedTokenizer,
+    style: PreProcessStyle = PreProcessStyle.BSC_CHAT
+) -> Dict:
+    conversations_key = "conversations"
+    sources = [example[conversations_key] for example in data]
+    
+    if(PreProcessStyle.BSC_CHAT == style):
+        metadata = [{k: v for k, v in d.items() if k != conversations_key} for d in data]
+        del data
+        return preprocess_bsc_chat(sources, metadata, tokenizer)
+    elif(PreProcessStyle.DEFAULT == style):
+        del data
+        return preprocess(sources, tokenizer)
+    else:
+        raise ValueError(f"Invalid style: {style}")
+
+
 class SupervisedDataset(Dataset):
     """Dataset for supervised fine-tuning."""
 
@@ -184,8 +314,7 @@ class SupervisedDataset(Dataset):
         super(SupervisedDataset, self).__init__()
 
         rank0_print("Formatting inputs...")
-        sources = [example["conversations"] for example in raw_data]
-        data_dict = preprocess(sources, tokenizer)
+        data_dict = preprocess_conditional(raw_data, tokenizer)
 
         self.input_ids = data_dict["input_ids"]
         self.labels = data_dict["labels"]
@@ -221,7 +350,7 @@ class LazySupervisedDataset(Dataset):
         if i in self.cached_data_dict:
             return self.cached_data_dict[i]
 
-        ret = preprocess([self.raw_data[i]["conversations"]], self.tokenizer)
+        ret = preprocess_conditional([self.raw_data[i]], self.tokenizer)
         ret = dict(
             input_ids=ret["input_ids"][0],
             labels=ret["labels"][0],
@@ -286,12 +415,15 @@ def train():
         cache_dir=training_args.cache_dir,
         model_max_length=training_args.model_max_length,
         padding_side=model_args.padding_side,
-        use_fast=False,
+        use_fast=True,
         trust_remote_code=model_args.trust_remote_code,
     )
 
     if tokenizer.pad_token != tokenizer.unk_token:
         tokenizer.pad_token = tokenizer.unk_token
+
+    if model_args.add_chat_template: # BSC: for using chat template
+        tokenizer.chat_template = CHAT_TEMPLATE
 
     # Load data
     data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args)
@@ -316,3 +448,4 @@ def train():
 
 if __name__ == "__main__":
     train()
+CHAT_TEMPLATE = "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"

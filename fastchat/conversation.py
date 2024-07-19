@@ -8,10 +8,9 @@ If you have any changes in mind, please contribute back so the community can ben
 import base64
 import dataclasses
 from enum import auto, IntEnum
-from io import BytesIO
 import os
 from typing import List, Any, Dict, Union, Tuple
-
+import random
 
 class SeparatorStyle(IntEnum):
     """Separator styles."""
@@ -39,10 +38,32 @@ class SeparatorStyle(IntEnum):
     GEMMA = auto()
     CLLM = auto()
     DEFAULT = auto()
+    BSC_CHAT_TEMPLATE = auto()
 
 
 IMAGE_PLACEHOLDER_STR = "$$<image>$$"
 
+def format_instruction(self, instruction: str, context: str, metadata: dict = None) -> str:
+        '''
+        (BSC)
+        Arguments
+        ---------
+        instruction : str
+            body of the instruction (e.g. summaryze the following text)
+        context : str
+            context for the instruction (e.g. text to summarize)
+        
+        Returns
+        -------
+        message : str
+            resulting message containing instruction + input applying random formatting
+        '''
+
+        # categories on which context must be shown prior to the instruction
+        if "category" in metadata and metadata["category"] in [ "closed_qa", "qa"]: # we put the context before the instruction
+            return f"Context:\n{context}\n\nQuestion:\n{instruction}"
+        
+        return f"Question:\n{instruction}\n\nContext:\n{context}"
 
 @dataclasses.dataclass
 class Conversation:
@@ -54,6 +75,8 @@ class Conversation:
     system_template: str = "{system_message}"
     # The system message
     system_message: str = ""
+    # BSC: system role
+    system_role: str = "SYSTEM"
     system_message_vision: str = ""
     # The names of two roles
     roles: Tuple[str] = ("USER", "ASSISTANT")
@@ -73,10 +96,28 @@ class Conversation:
     # The maximum image size in megabytes that this model takes in. None means we do not resize the image.
     max_image_size_mb: int = None
 
-    def get_prompt(self) -> str:
+    def get_prompt(self, tokenizer=None, metadata: dict = None) -> str:
         """Get the prompt for generation."""
         system_prompt = self.system_template.format(system_message=self.system_message)
-        if self.sep_style == SeparatorStyle.ADD_COLON_SINGLE:
+        # BSC: get prompt with tokenizer.
+        if self.sep_style == SeparatorStyle.BSC_CHAT_TEMPLATE:
+            # if system_prompt != "":
+            chat = [{"role": self.system_role, "content": "soy sistema"}]
+            # else:
+            #     chat = []
+            for i, (role, message) in enumerate(self.messages):
+                if message:
+                    if type(message) is list:
+                        instruction, ins_input = message
+                        if ins_input != "":
+                            message = self.format_instruction(instruction, ins_input, metadata)
+                        else:
+                            message = instruction
+                chat.append({"role": role, "content": message})
+            return tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=False)
+   
+        
+        elif self.sep_style == SeparatorStyle.ADD_COLON_SINGLE:
             ret = system_prompt + self.sep
             for role, message in self.messages:
                 if message:
@@ -613,6 +654,7 @@ class Conversation:
             system_template=self.system_template,
             system_message=self.system_message,
             system_message_vision=self.system_message_vision,
+            system_role=self.system_role,
             roles=self.roles,
             messages=[[x, y] for x, y in self.messages],
             offset=self.offset,
@@ -627,6 +669,7 @@ class Conversation:
     def dict(self):
         return {
             "template_name": self.name,
+            "system_role": self.system_role,
             "system_message": self.system_message,
             "roles": self.roles,
             "messages": self.extract_text_and_image_hashes_from_messages(),
@@ -2074,7 +2117,28 @@ register_conv_template(
     )
 )
 
+register_conv_template(
+    Conversation(
+        name="bsc_chat_template",
+        system_message="",
+        system_role="system",
+        roles=("user", "assistant"),
+        sep_style=SeparatorStyle.BSC_CHAT_TEMPLATE,
+        sep="<|im_start|>",
+        sep2="<|im_end|>\n",
+    )
+)
+
+print(get_conv_template("bsc_chat_template").__dict__)
+
 if __name__ == "__main__":
+    import os
+    import sys
+    current_directory = os.path.dirname(os.path.realpath(__file__))
+    parent_directory = os.path.dirname(current_directory)
+    sys.path.append(parent_directory)
+
+
     from fastchat.conversation import get_conv_template
 
     print("-- Vicuna template --")
@@ -2115,3 +2179,14 @@ if __name__ == "__main__":
     conv.append_message(conv.roles[0], "How are you?")
     conv.append_message(conv.roles[1], None)
     print(conv.get_prompt())
+
+    print("\n")
+
+    print("-- Dolly --")
+    conv = get_conv_template("dolly_v2")
+    conv.append_message(conv.roles[0], "Hello!")
+    conv.append_message(conv.roles[1], "Hi!")
+    conv.append_message(conv.roles[0], "How are you?")
+    conv.append_message(conv.roles[1], None)
+    print(conv.get_prompt())
+
