@@ -51,6 +51,12 @@ class PreProcessStyle(IntEnum):
 @dataclass
 class ModelArguments:
     model_name_or_path: Optional[str] = field(default="facebook/opt-125m")
+    tokenizer_name_or_path: Optional[str] = field(
+        default=None, 
+        metadata={
+            "help": f"Whether or not to add deferent tokenizer default: equal to model_name_or_path"
+        }
+    )
     trust_remote_code: bool = field(
         default=False,
         metadata={
@@ -396,6 +402,12 @@ def train():
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
     local_rank = training_args.local_rank
 
+    # BSC: get tokenizer path if different
+    tokenizer_name_or_path = model_args.model_name_or_path
+    if model_args.tokenizer_name_or_path:
+        tokenizer_name_or_path = model_args.tokenizer_name_or_path
+
+
     # Set RoPE scaling factor
     config = transformers.AutoConfig.from_pretrained(
         model_args.model_name_or_path,
@@ -416,7 +428,7 @@ def train():
         trust_remote_code=model_args.trust_remote_code,
     )
     tokenizer = transformers.AutoTokenizer.from_pretrained(
-        model_args.model_name_or_path,
+        tokenizer_name_or_path,
         cache_dir=training_args.cache_dir,
         model_max_length=training_args.model_max_length,
         padding_side=model_args.padding_side,
