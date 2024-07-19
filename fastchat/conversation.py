@@ -101,10 +101,10 @@ class Conversation:
         system_prompt = self.system_template.format(system_message=self.system_message)
         # BSC: get prompt with tokenizer.
         if self.sep_style == SeparatorStyle.BSC_CHAT_TEMPLATE:
-            # if system_prompt != "":
-            chat = [{"role": self.system_role, "content": "soy sistema"}]
-            # else:
-            #     chat = []
+            if system_prompt != "":
+                chat = [{"role": self.system_role, "content": system_prompt}]
+            else:
+                chat = []
             for i, (role, message) in enumerate(self.messages):
                 if message:
                     if type(message) is list:
@@ -2128,8 +2128,6 @@ register_conv_template(
         sep2="<|im_end|>\n",
     )
 )
-
-print(get_conv_template("bsc_chat_template").__dict__)
 
 if __name__ == "__main__":
     import os

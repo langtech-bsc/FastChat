@@ -45,5 +45,6 @@ torchrun $DIST_ARGS fastchat/train/train.py \
     --model_max_length 4096 \
     --gradient_checkpointing True \
     --add_chat_template True \
+    --lazy_preprocess True \
     --local_rank -1 \
     --report_to "wandb"
