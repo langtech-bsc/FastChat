@@ -76,6 +76,8 @@ class Conversation:
     # The system message
     system_message: str = ""
     # BSC: system role
+    chat_template: str|None = None
+    # BSC: chat template
     system_role: str = "SYSTEM"
     system_message_vision: str = ""
     # The names of two roles
@@ -96,6 +98,20 @@ class Conversation:
     # The maximum image size in megabytes that this model takes in. None means we do not resize the image.
     max_image_size_mb: int = None
 
+    def get_optimization_parts(self, tokenizer=None) -> str:
+        """Get the optimation parts of generation."""
+        # BSC: get prompt with tokenizer.
+        if self.sep_style == SeparatorStyle.BSC_CHAT_TEMPLATE:
+            start_tokens = tokenizer.apply_chat_template([{"role": self.roles[1], "content": ":----:"}], tokenize=False, add_generation_prompt=False).split(":----:")[0]
+            parts = []
+            for (role, message) in self.messages:
+                if role == self.roles[1]:
+                    chat = [{"role": role, "content": message}]
+                    parts.append(tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=False))
+            return parts, start_tokens
+        else:
+            raise ValueError(f"Invalid style on get_optimization_parts: {self.sep_style}")
+   
     def get_prompt(self, tokenizer=None, metadata: dict = None) -> str:
         """Get the prompt for generation."""
         system_prompt = self.system_template.format(system_message=self.system_message)
@@ -655,6 +671,7 @@ class Conversation:
             system_message=self.system_message,
             system_message_vision=self.system_message_vision,
             system_role=self.system_role,
+            chat_template=self.chat_template,
             roles=self.roles,
             messages=[[x, y] for x, y in self.messages],
             offset=self.offset,
@@ -2121,6 +2138,7 @@ register_conv_template(
     Conversation(
         name="bsc_chat_template",
         system_message="",
+        chat_template="{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] | trim + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}",
         system_role="system",
         roles=("user", "assistant"),
         sep_style=SeparatorStyle.BSC_CHAT_TEMPLATE,

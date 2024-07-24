@@ -28,20 +28,23 @@ from torch.utils.data import Dataset
 import transformers
 from transformers import Trainer
 from transformers.trainer_pt_utils import LabelSmoother
-
+import re
 import os
 import sys
 current_directory = os.path.dirname(os.path.realpath(__file__))
 parent_directory = os.path.dirname(current_directory + '/../../..')
 sys.path.append(parent_directory)
 
-from fastchat.conversation import SeparatorStyle, get_conv_template
+from fastchat.conversation import SeparatorStyle, get_conv_template, Conversation
 
 IGNORE_TOKEN_ID = LabelSmoother.ignore_index
+special_chars = r'.^$*+?{}[]\|()'
+pattern = re.compile(f"([{re.escape(special_chars)}])")
 
-CHAT_TEMPLATE = "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] | trim + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
-# CHAT_TEMPLATE = "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + ('<|im_end|>' if message['role'] in ['user', 'system'] else eos_token) + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
 
+def escape_special_characters_except_newline(text):
+    return pattern.sub(r'\\\1', text)
+    
 class PreProcessStyle(IntEnum):
     """Separator styles."""
 
@@ -70,7 +73,7 @@ class ModelArguments:
     add_chat_template: Optional[bool] = field(
         default=False, 
         metadata={
-            "help": f"Whether or not to add and train the model with the chat template: {CHAT_TEMPLATE}"
+            "help": f"Whether or not to add and train the model with the chat template"
         }
     )
 
@@ -121,13 +124,12 @@ def preprocess_bsc_chat(
     sources,
     metadata,
     tokenizer: transformers.PreTrainedTokenizer,
+    conv:Conversation
 ) -> Dict:
-    conv = get_conv_template("bsc_chat_template")
-    assert conv.sep_style == SeparatorStyle.BSC_CHAT_TEMPLATE
     roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
-
     
     conversations = []
+    optimizations_parts = []
     for i, source in enumerate(sources):
         if roles[source[0]["from"]] != conv.roles[0]:
             # Skip the first one if it is not from human
@@ -139,6 +141,7 @@ def preprocess_bsc_chat(
             assert role == conv.roles[j % 2], f"{i}, \nErroneous source: {source}"
             conv.append_message(role, sentence["value"])
         conversations.append(conv.get_prompt(tokenizer=tokenizer, metadata=metadata))
+        optimizations_parts.append(conv.get_optimization_parts(tokenizer))
 
     # Tokenize conversations
     tok_output = tokenizer(
@@ -154,54 +157,51 @@ def preprocess_bsc_chat(
     
     # Mask targets. Only compute loss on the assistant outputs.
     sep = conv.sep + conv.roles[1] + "\n"
+    
 
     for j, (conversation, target) in enumerate(zip(conversations, targets)):
-        total_len = int(target.ne(tokenizer.pad_token_id).sum())
-        cur_len = 0
+        if 0 in att_masks[i]:
+            total_len = int(target.ne(tokenizer.pad_token_id).sum())
+            bos = 0
+            gemma_tok = type(tokenizer) == transformers.models.gemma.tokenization_gemma.GemmaTokenizer
+            gemma_tok_fast = type(tokenizer) == transformers.models.gemma.tokenization_gemma_fast.GemmaTokenizerFast
+            llama_tok_fast = type(tokenizer) == transformers.models.llama.tokenization_llama_fast.LlamaTokenizerFast # Mistral tokenizer
+            if gemma_tok or gemma_tok_fast or llama_tok_fast:
+                bos = 1 # Gemma Tokenizer adds bos token
+            target[:bos] = IGNORE_TOKEN_ID
+
+            ignore_parts = []
+            start = 0
+            cur_len = bos
+            for o_part in optimizations_parts[j][0]:
+                found = list(re.finditer(re.escape(o_part), conversation))[0]
+                end = found.start() + len(optimizations_parts[j][1])
+                end_token = cur_len + len(tokenizer.tokenize(conversation[start: end]))
+                ignore_parts.append((cur_len, end_token))
+                start = found.end()
+                cur_len = bos + len(tokenizer.tokenize(conversation[:found.end()]))
+
+            ignore_parts.append((cur_len, None))
+            for ignore in ignore_parts:
+                target[ignore[0]: ignore[1]] = IGNORE_TOKEN_ID
+
+            print("\nCONVERSATION:\n" + conversation + "\nOptimization in ---------->\n" + tokenizer.decode([el for i,el in enumerate(target) if el != -100]) + "\n")
             
-        gemma_tok = type(tokenizer) == transformers.models.gemma.tokenization_gemma.GemmaTokenizer
-        gemma_tok_fast = type(tokenizer) == transformers.models.gemma.tokenization_gemma_fast.GemmaTokenizerFast
-        llama_tok_fast = type(tokenizer) == transformers.models.llama.tokenization_llama_fast.LlamaTokenizerFast # Mistral tokenizer
-        if gemma_tok or gemma_tok_fast or llama_tok_fast:
-            cur_len += 1 # Gemma Tokenizer adds bos token
-        target[:cur_len] = IGNORE_TOKEN_ID
+            if cur_len < tokenizer.model_max_length:
+                if cur_len != total_len:
+                    target[:] = IGNORE_TOKEN_ID
+                    rank0_print(
+                        f"WARNING: tokenization mismatch: {cur_len} vs. {total_len}."
+                        # f" #turn = {len(turns) - 1}. (ignored)"
+                    )
 
-        turns = [text + conv.sep2 for text in conversation.split(conv.sep2) if text]
-        for turn in turns:
-            turn_len = len(tokenizer.tokenize(turn))
-            parts = turn.split(sep)
-            
-            if len(parts) == 2:
-                parts[0] += sep
-            elif len(parts) != 1:
-                raise Exception(f"Error: found more the one or zero {sep} in Conversation:\n{conversation}\nTrun:\n{turn}")
-            
-            instruction_len = len(tokenizer.tokenize(parts[0]))
+            else: # conversation was truncated
+                target[:] = IGNORE_TOKEN_ID # Ignoring it
+                dropped_conv_counter +=1
+                # print(f"WARNING: Filtered conversation due to truncated:\n{conversation}")
 
-            # Ignore the user instructions
-            target[cur_len : cur_len + instruction_len] = IGNORE_TOKEN_ID
-            cur_len += turn_len
 
-        target[cur_len:] = IGNORE_TOKEN_ID
-
-        print("\n CONVERSATION: \n", conversation, "\n Optimization in ---------->\n",tokenizer.decode([el for i,el in enumerate(target) if el != -100]), "\n")
-        # print("\n Optimization in ---------->",tokenizer.decode([el for i,el in enumerate(target) if el != -100]), "\n")
-        optimization_printed=True
-
-        if False:  # Inspect and check the correctness of masking
-            z = target.clone()
-            z = torch.where(z == IGNORE_TOKEN_ID, tokenizer.unk_token_id, z)
-            rank0_print(tokenizer.decode(z))
-            exit()
-
-        if cur_len < tokenizer.model_max_length:
-            if cur_len != total_len:
-                target[:] = IGNORE_TOKEN_ID
-                rank0_print(
-                    f"WARNING: tokenization mismatch: {cur_len} vs. {total_len}."
-                    # f" #turn = {len(turns) - 1}. (ignored)"
-                )
-
+    
     return dict(
         input_ids=input_ids,
         labels=targets,
@@ -298,7 +298,8 @@ def preprocess(
 def preprocess_conditional(
     data,
     tokenizer: transformers.PreTrainedTokenizer,
-    style: PreProcessStyle = PreProcessStyle.BSC_CHAT
+    conv:Conversation=None,
+    style: PreProcessStyle = PreProcessStyle.BSC_CHAT,
 ) -> Dict:
     conversations_key = "conversations"
     sources = [example[conversations_key] for example in data]
@@ -306,7 +307,7 @@ def preprocess_conditional(
     if(PreProcessStyle.BSC_CHAT == style):
         metadata = [{k: v for k, v in d.items() if k != conversations_key} for d in data]
         del data
-        return preprocess_bsc_chat(sources, metadata, tokenizer)
+        return preprocess_bsc_chat(sources, metadata, tokenizer, conv)
     elif(PreProcessStyle.DEFAULT == style):
         del data
         return preprocess(sources, tokenizer)
@@ -317,12 +318,12 @@ def preprocess_conditional(
 class SupervisedDataset(Dataset):
     """Dataset for supervised fine-tuning."""
 
-    def __init__(self, raw_data, tokenizer: transformers.PreTrainedTokenizer):
+    def __init__(self, raw_data, tokenizer: transformers.PreTrainedTokenizer, conv=None):
         super(SupervisedDataset, self).__init__()
 
         rank0_print("Formatting inputs...")
-        data_dict = preprocess_conditional(raw_data, tokenizer)
-
+        self.conv=conv
+        data_dict = preprocess_conditional(raw_data, tokenizer, conv=self.conv)
         self.input_ids = data_dict["input_ids"]
         self.labels = data_dict["labels"]
         self.attention_mask = data_dict["attention_mask"]
@@ -341,7 +342,7 @@ class SupervisedDataset(Dataset):
 class LazySupervisedDataset(Dataset):
     """Dataset for supervised fine-tuning."""
 
-    def __init__(self, raw_data, tokenizer: transformers.PreTrainedTokenizer):
+    def __init__(self, raw_data, tokenizer: transformers.PreTrainedTokenizer, conv=None):
         super(LazySupervisedDataset, self).__init__()
         self.tokenizer = tokenizer
 
@@ -349,6 +350,7 @@ class LazySupervisedDataset(Dataset):
         self.tokenizer = tokenizer
         self.raw_data = raw_data
         self.cached_data_dict = {}
+        self.conv = conv
 
     def __len__(self):
         return len(self.raw_data)
@@ -357,7 +359,7 @@ class LazySupervisedDataset(Dataset):
         if i in self.cached_data_dict:
             return self.cached_data_dict[i]
 
-        ret = preprocess_conditional([self.raw_data[i]], self.tokenizer)
+        ret = preprocess_conditional([self.raw_data[i]], self.tokenizer, conv=self.conv)
         ret = dict(
             input_ids=ret["input_ids"][0],
             labels=ret["labels"][0],
@@ -369,7 +371,7 @@ class LazySupervisedDataset(Dataset):
 
 
 def make_supervised_data_module(
-    tokenizer: transformers.PreTrainedTokenizer, data_args
+    tokenizer: transformers.PreTrainedTokenizer, data_args, conv=None
 ) -> Dict:
     """Make dataset and collator for supervised fine-tuning."""
     dataset_cls = (
@@ -378,15 +380,15 @@ def make_supervised_data_module(
     rank0_print("Loading data...")
 
     train_json = json.load(open(data_args.data_path, "r"))
-    train_dataset = dataset_cls(train_json, tokenizer=tokenizer)
+    train_dataset = dataset_cls(train_json, tokenizer=tokenizer, conv=conv)
     random.shuffle(train_json)
-    train_json = train_json[:2000] # TODO: DELETE AFTER TESTS!!
+    # train_json = train_json[:2000] # TODO: DELETE AFTER TESTS!!
 
     if data_args.eval_data_path:
         eval_json = json.load(open(data_args.eval_data_path, "r"))
         eval_size = int(len(train_dataset) / 10)
         eval_json = eval_json[:eval_size]
-        eval_dataset = dataset_cls(eval_json, tokenizer=tokenizer)
+        eval_dataset = dataset_cls(eval_json, tokenizer=tokenizer, conv=conv)
     else:
         eval_dataset = None
 
@@ -445,11 +447,12 @@ def train():
     # model.resize_token_embeddings(len(tokenizer))
     # model.config.eos_token_id = tokenizer.eos_token_id
     
+    conv = get_conv_template("bsc_chat_template")
+    assert conv.sep_style == SeparatorStyle.BSC_CHAT_TEMPLATE
     if model_args.add_chat_template: # BSC: for using chat template
-        tokenizer.chat_template = CHAT_TEMPLATE
-
+        tokenizer.chat_template = conv.chat_template
     # Load data
-    data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args)
+    data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args, conv=conv)
 
     # Start trainner
     trainer = Trainer(
@@ -471,4 +474,56 @@ def train():
 
 if __name__ == "__main__":
     train()
-CHAT_TEMPLATE = "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
+
+
+
+
+# for j, (conversation, target) in enumerate(zip(conversations, targets)):
+#         total_len = int(target.ne(tokenizer.pad_token_id).sum())
+#         cur_len = 0
+            
+#         gemma_tok = type(tokenizer) == transformers.models.gemma.tokenization_gemma.GemmaTokenizer
+#         gemma_tok_fast = type(tokenizer) == transformers.models.gemma.tokenization_gemma_fast.GemmaTokenizerFast
+#         llama_tok_fast = type(tokenizer) == transformers.models.llama.tokenization_llama_fast.LlamaTokenizerFast # Mistral tokenizer
+#         if gemma_tok or gemma_tok_fast or llama_tok_fast:
+#             cur_len += 1 # Gemma Tokenizer adds bos token
+#         target[:cur_len] = IGNORE_TOKEN_ID
+
+#         turns = [text + conv.sep2 for text in conversation.split(conv.sep2) if text]
+#         for turn in turns:
+#             turn_len = len(tokenizer.tokenize(turn))
+#             parts = turn.split(sep)
+            
+#             if len(parts) == 2:
+#                 parts[0] += sep
+#             elif len(parts) != 1:
+#                 raise Exception(f"Error: found more the one or zero {sep} in Conversation:\n{conversation}\nTrun:\n{turn}")
+            
+#             instruction_len = len(tokenizer.tokenize(parts[0]))
+
+#             # Ignore the user instructions
+#             target[cur_len : cur_len + instruction_len] = IGNORE_TOKEN_ID
+#             print(cur_len, cur_len + instruction_len)
+#             print()
+#             cur_len += turn_len
+
+#         target[cur_len:] = IGNORE_TOKEN_ID
+#         print()
+
+#         # print("\n CONVERSATION: \n", conversation, "\n Optimization in ---------->\n",tokenizer.decode([el for i,el in enumerate(target) if el != -100]), "\n")
+#         # print("\n Optimization in ---------->",tokenizer.decode([el for i,el in enumerate(target) if el != -100]), "\n")
+#         optimization_printed=True
+
+#         if False:  # Inspect and check the correctness of masking
+#             z = target.clone()
+#             z = torch.where(z == IGNORE_TOKEN_ID, tokenizer.unk_token_id, z)
+#             rank0_print(tokenizer.decode(z))
+#             exit()
+
+#         if cur_len < tokenizer.model_max_length:
+#             if cur_len != total_len:
+#                 target[:] = IGNORE_TOKEN_ID
+#                 rank0_print(
+#                     f"WARNING: tokenization mismatch: {cur_len} vs. {total_len}."
+#                     # f" #turn = {len(turns) - 1}. (ignored)"
+#                 )

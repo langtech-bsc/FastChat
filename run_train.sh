@@ -22,7 +22,7 @@ export WORLD_SIZE=30
 torchrun $DIST_ARGS fastchat/train/train.py \
     --deepspeed deepspeed_configs/ds_type3_config_autombs.json \
     --model_name_or_path $HOME/Documents/langtech/converted_7b_8k_step_1390000_hf \
-    --tokenizer_name_or_path $HOME/Documents/langtech/converted_7b_8k_step_1390000_hf_tok \
+    --tokenizer_name_or_path $HOME/Documents/langtech/converted_7b_8k_step_1390000_hf \
     --data_path \
         $HOME/Documents/langtech/demo_data.json \
     --eval_data_path \
@@ -46,6 +46,6 @@ torchrun $DIST_ARGS fastchat/train/train.py \
     --model_max_length 4096 \
     --gradient_checkpointing True \
     --add_chat_template True \
-    --lazy_preprocess True \
+    --lazy_preprocess False \
     --local_rank -1 \
     --report_to "wandb"
