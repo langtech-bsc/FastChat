@@ -26,8 +26,8 @@ llm_judge = ["openai<1", "anthropic>=0.3", "ray"]
 dev = ["black==23.3.0", "pylint==2.8.2"]
 
 [project.urls]
-"Homepage" = "https://github.com/lm-sys/fastchat"
-"Bug Tracker" = "https://github.com/lm-sys/fastchat/issues"
+"Homepage" = "https://github.com/langtech-bsc/FastChat"
+"Bug Tracker" = "https://github.com/langtech-bsc/FastChat/issues"
 
 [tool.setuptools.packages.find]
 exclude = ["assets*", "benchmark*", "docs", "dist*", "playground*", "scripts*", "tests*"]

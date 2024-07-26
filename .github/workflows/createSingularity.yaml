@@ -1,0 +1,19 @@
+name: Publish Python distribution to PyPI
+
+on:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  build:
+    name: Build singularity
+    runs-on: magma-runner-set
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Show tag
+      run: echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}"
+
+
+  
