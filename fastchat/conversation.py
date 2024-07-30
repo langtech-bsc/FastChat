@@ -39,7 +39,8 @@ class SeparatorStyle(IntEnum):
     GEMMA = auto()
     CLLM = auto()
     DEFAULT = auto()
-    BSC_CHAT_TEMPLATE = auto()
+    CHATML_TEMPLATE = auto()
+    DOLLY_TEMPLATE = auto()
 
 
 IMAGE_PLACEHOLDER_STR = "$$<image>$$"
@@ -102,7 +103,7 @@ class Conversation:
     def get_optimization_parts(self, tokenizer=None) -> str:
         """Get the optimation parts of generation."""
         # BSC: get prompt with tokenizer.
-        if self.sep_style == SeparatorStyle.BSC_CHAT_TEMPLATE:
+        if self.sep_style in [SeparatorStyle.CHATML_TEMPLATE, SeparatorStyle.DOLLY_TEMPLATE]:
             pattern = "[\s\S]*?"
             regex = tokenizer.apply_chat_template([{"role": self.roles[1], "content": pattern}], tokenize=False, add_generation_prompt=False).strip()
             toEscape = regex.split(pattern)
@@ -114,7 +115,7 @@ class Conversation:
         """Get the prompt for generation."""
         system_prompt = self.system_template.format(system_message=self.system_message)
         # BSC: get prompt with tokenizer.
-        if self.sep_style == SeparatorStyle.BSC_CHAT_TEMPLATE:
+        if self.sep_style in [SeparatorStyle.CHATML_TEMPLATE, SeparatorStyle.DOLLY_TEMPLATE]:
             if system_prompt != "":
                 chat = [{"role": self.system_role, "content": system_prompt}]
             else:
@@ -122,9 +123,9 @@ class Conversation:
             for i, (role, message) in enumerate(self.messages):
                 if message:
                     if type(message) is list:
-                        instruction, ins_input = message
-                        if ins_input != "":
-                            message = self.format_instruction(instruction, ins_input, metadata)
+                        instruction, context = message
+                        if context != "":
+                            message = self.format_instruction(instruction, context, metadata)
                         else:
                             message = instruction
                 chat.append({"role": role, "content": message})
@@ -2132,16 +2133,30 @@ register_conv_template(
     )
 )
 
+#BSC: Add Chatml
 register_conv_template(
     Conversation(
-        name="bsc_chat_template",
+        name="chatml_template",
         system_message="",
         chat_template="{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] | trim + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}",
         system_role="system",
         roles=("user", "assistant"),
-        sep_style=SeparatorStyle.BSC_CHAT_TEMPLATE,
+        sep_style=SeparatorStyle.CHATML_TEMPLATE,
         sep="<|im_start|>",
         sep2="<|im_end|>\n",
+    )
+)
+
+# BSC: Dolly template
+register_conv_template(
+    Conversation(
+        name="dolly_template",
+        chat_template="{% set system_prompt = messages[0]['content'] if messages[0]['role'] == 'system' else '' %}{% set instructions = messages | selectattr('role', 'equalto', '### Instruction') | list %}{% set responses = messages | selectattr('role', 'equalto', '### Response') | list %}{% if instructions | length > 1 or responses | length > 1 %}{{- raise_exception('Error: Maximum length for instructions or responses is one.') }}{% else %}{% if system_prompt %}{{ system_prompt | trim + '\n'}}{% endif %}{% for message in messages %}{% if message['role'] != 'system' %}{{ message['role'] + '\n'}}{{ message['content'] | trim }}{% if message['role'] == '### Response' %}{{'</s>'}}{% endif %}{{'\n\n'}}{% endif %}{% endfor %}{% if add_generation_prompt %}{{'### Response\n'}}{% endif %}{% endif %}",
+        system_message="",
+        roles=("### Instruction", "### Response"),
+        sep_style=SeparatorStyle.DOLLY_TEMPLATE,
+        sep="\n\n", 
+        sep2="</s>",
     )
 )
 

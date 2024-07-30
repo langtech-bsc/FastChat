@@ -121,16 +121,18 @@ def trainer_save_model_safe(trainer: transformers.Trainer):
 
 
 def preprocess_bsc_chat(
-    sources,
-    metadata,
+    data,
     tokenizer: transformers.PreTrainedTokenizer,
     conv:Conversation
 ) -> Dict:
     roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
     
     conversations = []
-    optimizations_parts = []
-    for i, source in enumerate(sources):
+    
+    conversations_key = "conversations"
+    for i, raw in enumerate(data):
+        source = raw[conversations_key]
+        metadata = {k: v for k, v in raw.items() if k != conversations_key}
         if roles[source[0]["from"]] != conv.roles[0]:
             # Skip the first one if it is not from human
             source = source[1:]
@@ -141,6 +143,7 @@ def preprocess_bsc_chat(
             assert role == conv.roles[j % 2], f"{i}, \nErroneous source: {source}"
             conv.append_message(role, sentence["value"])
         conversations.append(conv.get_prompt(tokenizer=tokenizer, metadata=metadata))
+            
 
     # Tokenize conversations
     tok_output = tokenizer(
@@ -182,7 +185,7 @@ def preprocess_bsc_chat(
             for ignore in ignore_parts:
                 target[ignore[0]: ignore[1]] = IGNORE_TOKEN_ID
 
-            print("\nCONVERSATION:\n" + conversation + "\nOptimization in ---------->\n" + tokenizer.decode([el for i,el in enumerate(target) if el != -100]) + "\n")
+            print("\nCONVERSATION:\n" + conversation + "\nOptimization in ---------->\n" + tokenizer.decode([el for i,el in enumerate(target) if el != IGNORE_TOKEN_ID]) + "\n")
             
             if cur_len < tokenizer.model_max_length:
                 if cur_len != total_len:
@@ -192,10 +195,10 @@ def preprocess_bsc_chat(
                         # f" #turn = {len(turns) - 1}. (ignored)"
                     )
 
-            else: # conversation was truncated
-                target[:] = IGNORE_TOKEN_ID # Ignoring it
-                dropped_conv_counter +=1
-                # print(f"WARNING: Filtered conversation due to truncated:\n{conversation}")
+        else: # conversation was truncated
+            target[:] = IGNORE_TOKEN_ID # Ignoring it
+            dropped_conv_counter +=1
+            # print(f"WARNING: Filtered conversation due to truncated:\n{conversation}")
 
 
     
@@ -291,27 +294,6 @@ def preprocess(
         attention_mask=input_ids.ne(tokenizer.pad_token_id),
     )
 
-
-def preprocess_conditional(
-    data,
-    tokenizer: transformers.PreTrainedTokenizer,
-    conv:Conversation=None,
-    style: PreProcessStyle = PreProcessStyle.BSC_CHAT,
-) -> Dict:
-    conversations_key = "conversations"
-    sources = [example[conversations_key] for example in data]
-    
-    if(PreProcessStyle.BSC_CHAT == style):
-        metadata = [{k: v for k, v in d.items() if k != conversations_key} for d in data]
-        del data
-        return preprocess_bsc_chat(sources, metadata, tokenizer, conv)
-    elif(PreProcessStyle.DEFAULT == style):
-        del data
-        return preprocess(sources, tokenizer)
-    else:
-        raise ValueError(f"Invalid style: {style}")
-
-
 class SupervisedDataset(Dataset):
     """Dataset for supervised fine-tuning."""
 
@@ -320,7 +302,7 @@ class SupervisedDataset(Dataset):
 
         rank0_print("Formatting inputs...")
         self.conv=conv
-        data_dict = preprocess_conditional(raw_data, tokenizer, conv=self.conv)
+        data_dict = preprocess_bsc_chat(raw_data, tokenizer, conv=self.conv)
         self.input_ids = data_dict["input_ids"]
         self.labels = data_dict["labels"]
         self.attention_mask = data_dict["attention_mask"]
@@ -356,7 +338,7 @@ class LazySupervisedDataset(Dataset):
         if i in self.cached_data_dict:
             return self.cached_data_dict[i]
 
-        ret = preprocess_conditional([self.raw_data[i]], self.tokenizer, conv=self.conv)
+        ret = preprocess_bsc_chat([self.raw_data[i]], self.tokenizer, conv=self.conv)
         ret = dict(
             input_ids=ret["input_ids"][0],
             labels=ret["labels"][0],
@@ -419,13 +401,13 @@ def train():
         config.rope_scaling = {"type": "linear", "factor": scaling_factor}
     config.use_cache = False
 
-    # # Load model and tokenizer
-    # model = transformers.AutoModelForCausalLM.from_pretrained(
-    #     model_args.model_name_or_path,
-    #     config=config,
-    #     cache_dir=training_args.cache_dir,
-    #     trust_remote_code=model_args.trust_remote_code,
-    # )
+    # Load model and tokenizer
+    model = transformers.AutoModelForCausalLM.from_pretrained(
+        model_args.model_name_or_path,
+        config=config,
+        cache_dir=training_args.cache_dir,
+        trust_remote_code=model_args.trust_remote_code,
+    )
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         tokenizer_name_or_path,
         cache_dir=training_args.cache_dir,
@@ -444,8 +426,7 @@ def train():
     # model.resize_token_embeddings(len(tokenizer))
     # model.config.eos_token_id = tokenizer.eos_token_id
     
-    conv = get_conv_template("bsc_chat_template")
-    assert conv.sep_style == SeparatorStyle.BSC_CHAT_TEMPLATE
+    conv = get_conv_template("chatml_template")
     if model_args.add_chat_template: # BSC: for using chat template
         tokenizer.chat_template = conv.chat_template
     # Load data
