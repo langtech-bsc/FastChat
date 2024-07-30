@@ -11,6 +11,7 @@ from enum import auto, IntEnum
 import os
 from typing import List, Any, Dict, Union, Tuple
 import random
+import re
 
 class SeparatorStyle(IntEnum):
     """Separator styles."""
@@ -102,13 +103,10 @@ class Conversation:
         """Get the optimation parts of generation."""
         # BSC: get prompt with tokenizer.
         if self.sep_style == SeparatorStyle.BSC_CHAT_TEMPLATE:
-            start_tokens = tokenizer.apply_chat_template([{"role": self.roles[1], "content": ":----:"}], tokenize=False, add_generation_prompt=False).split(":----:")[0]
-            parts = []
-            for (role, message) in self.messages:
-                if role == self.roles[1]:
-                    chat = [{"role": role, "content": message}]
-                    parts.append(tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=False))
-            return parts, start_tokens
+            pattern = "[\s\S]*?"
+            regex = tokenizer.apply_chat_template([{"role": self.roles[1], "content": pattern}], tokenize=False, add_generation_prompt=False).strip()
+            toEscape = regex.split(pattern)
+            return f"{re.escape(toEscape[0])}({pattern}{re.escape(toEscape[1])})"
         else:
             raise ValueError(f"Invalid style on get_optimization_parts: {self.sep_style}")
    

@@ -141,7 +141,6 @@ def preprocess_bsc_chat(
             assert role == conv.roles[j % 2], f"{i}, \nErroneous source: {source}"
             conv.append_message(role, sentence["value"])
         conversations.append(conv.get_prompt(tokenizer=tokenizer, metadata=metadata))
-        optimizations_parts.append(conv.get_optimization_parts(tokenizer))
 
     # Tokenize conversations
     tok_output = tokenizer(
@@ -155,10 +154,8 @@ def preprocess_bsc_chat(
     att_masks = tok_output.attention_mask # Only used for ignoring truncated sequences.
     targets = input_ids.clone()
     
-    # Mask targets. Only compute loss on the assistant outputs.
-    sep = conv.sep + conv.roles[1] + "\n"
-    
 
+    regex = conv.get_optimization_parts(tokenizer)
     for j, (conversation, target) in enumerate(zip(conversations, targets)):
         if 0 in att_masks[i]:
             total_len = int(target.ne(tokenizer.pad_token_id).sum())
@@ -173,13 +170,13 @@ def preprocess_bsc_chat(
             ignore_parts = []
             start = 0
             cur_len = bos
-            for o_part in optimizations_parts[j][0]:
-                found = list(re.finditer(re.escape(o_part), conversation))[0]
-                end = found.start() + len(optimizations_parts[j][1])
+            matches = [(l.start(1), l.end(1), l.group(1)) for l in list(re.finditer(regex, conversation))]
+            for match in matches:
+                end = match[0]
                 end_token = cur_len + len(tokenizer.tokenize(conversation[start: end]))
                 ignore_parts.append((cur_len, end_token))
-                start = found.end()
-                cur_len = bos + len(tokenizer.tokenize(conversation[:found.end()]))
+                start = match[1]
+                cur_len = bos + len(tokenizer.tokenize(conversation[:start]))
 
             ignore_parts.append((cur_len, None))
             for ignore in ignore_parts:
@@ -422,13 +419,13 @@ def train():
         config.rope_scaling = {"type": "linear", "factor": scaling_factor}
     config.use_cache = False
 
-    # Load model and tokenizer
-    model = transformers.AutoModelForCausalLM.from_pretrained(
-        model_args.model_name_or_path,
-        config=config,
-        cache_dir=training_args.cache_dir,
-        trust_remote_code=model_args.trust_remote_code,
-    )
+    # # Load model and tokenizer
+    # model = transformers.AutoModelForCausalLM.from_pretrained(
+    #     model_args.model_name_or_path,
+    #     config=config,
+    #     cache_dir=training_args.cache_dir,
+    #     trust_remote_code=model_args.trust_remote_code,
+    # )
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         tokenizer_name_or_path,
         cache_dir=training_args.cache_dir,
