@@ -19,13 +19,13 @@ export WORLD_SIZE=30
 
 
 
-torchrun $DIST_ARGS fastchat/train/train.py \
-    --deepspeed deepspeed_configs/ds_type3_config_autombs.json \
+torchrun $DIST_ARGS -m fastchat.train.train \
+    --deepspeed /home/arana/Documents/langtech/FastChat/deepspeed_configs/ds_type3_config_autombs.json \
     --model_name_or_path $HOME/Documents/langtech/converted_7b_8k_step_1390000_hf \
     --tokenizer_name_or_path $HOME/Documents/langtech/converted_7b_8k_step_1390000_hf \
-    --data_path \
+    --data_paths \
         $HOME/Documents/langtech/demo_data.json \
-    --eval_data_path \
+    --eval_data_paths \
         $HOME/Documents/langtech/demo_data.json \
     --bf16 True \
     --output_dir $PATH_RESULTS \
@@ -33,7 +33,7 @@ torchrun $DIST_ARGS fastchat/train/train.py \
     --per_device_train_batch_size 2 \
     --per_device_eval_batch_size 2 \
     --gradient_accumulation_steps 4 \
-    --evaluation_strategy "steps" \
+    --eval_strategy "steps" \
     --eval_steps 0.25 \
     --save_strategy "steps" \
     --save_steps 0.25 \

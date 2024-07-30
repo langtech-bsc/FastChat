@@ -30,10 +30,12 @@ from transformers import Trainer
 from transformers.trainer_pt_utils import LabelSmoother
 import re
 import os
-import sys
+import psutil
+import timeit
+
 current_directory = os.path.dirname(os.path.realpath(__file__))
-parent_directory = os.path.dirname(current_directory + '/../../..')
-sys.path.append(parent_directory)
+# parent_directory = os.path.dirname(current_directory + '/../../..')
+# sys.path.append(parent_directory)
 
 from fastchat.conversation import SeparatorStyle, get_conv_template, Conversation
 
@@ -80,10 +82,10 @@ class ModelArguments:
 
 @dataclass
 class DataArguments:
-    data_path: str = field(
+    data_paths: list[str] = field(
         default=None, metadata={"help": "Path to the training data."}
     )
-    eval_data_path: str = field(
+    eval_data_paths: list[str] = field(
         default=None, metadata={"help": "Path to the evaluation data."}
     )
     lazy_preprocess: bool = False
@@ -157,7 +159,7 @@ def preprocess_bsc_chat(
     att_masks = tok_output.attention_mask # Only used for ignoring truncated sequences.
     targets = input_ids.clone()
     
-
+    optimization_printed=False
     regex = conv.get_optimization_parts(tokenizer)
     for j, (conversation, target) in enumerate(zip(conversations, targets)):
         if 0 in att_masks[i]:
@@ -180,13 +182,14 @@ def preprocess_bsc_chat(
                 ignore_parts.append((cur_len, end_token))
                 start = match[1]
                 cur_len = bos + len(tokenizer.tokenize(conversation[:start]))
-
             ignore_parts.append((cur_len, None))
             for ignore in ignore_parts:
                 target[ignore[0]: ignore[1]] = IGNORE_TOKEN_ID
 
-            print("\nCONVERSATION:\n" + conversation + "\nOptimization in ---------->\n" + tokenizer.decode([el for i,el in enumerate(target) if el != IGNORE_TOKEN_ID]) + "\n")
-            
+            if not optimization_printed:
+                print("\nCONVERSATION:\n" + conversation + "\nOptimization in ---------->\n" + tokenizer.decode([el for i,el in enumerate(target) if el != IGNORE_TOKEN_ID]) + "\n")
+                optimization_printed = True
+
             if cur_len < tokenizer.model_max_length:
                 if cur_len != total_len:
                     target[:] = IGNORE_TOKEN_ID
@@ -357,17 +360,38 @@ def make_supervised_data_module(
         LazySupervisedDataset if data_args.lazy_preprocess else SupervisedDataset
     )
     rank0_print("Loading data...")
+    rank0_print(f"DATA:\n{data_args.data_paths}")
+    rank0_print('RAM memory % used:', psutil.virtual_memory()[2], '%')
+    rank0_print('RAM Used (GB):', psutil.virtual_memory()[3]/1000000000)
 
-    train_json = json.load(open(data_args.data_path, "r"))
-    train_dataset = dataset_cls(train_json, tokenizer=tokenizer, conv=conv)
+
+    start_time = timeit.default_timer()
+    train_json = []
+    for data_path in data_args.data_paths: # BSC: To combine different data files
+        print(data_path)
+        train_json += json.load(open(data_path, "r"))
     random.shuffle(train_json)
-    # train_json = train_json[:2000] # TODO: DELETE AFTER TESTS!!
+    # train_json = train_json[:3000] # TODO: DELETE AFTER TESTS!!
 
-    if data_args.eval_data_path:
-        eval_json = json.load(open(data_args.eval_data_path, "r"))
-        eval_size = int(len(train_dataset) / 10)
+    elapsed = timeit.default_timer() - start_time
+    rank0_print(f">>>>>LOAD DATA TIME: {elapsed} sec")
+
+    # train_json = train_json[:4]
+    train_dataset = dataset_cls(train_json, tokenizer=tokenizer, conv=conv)
+    rank0_print(f"Train Dataset: {len(train_dataset)}")
+
+    elapsed = timeit.default_timer() - start_time
+    rank0_print(f">>>>>PREPARED DATA TIME: {elapsed} sec")
+
+    if data_args.eval_data_paths:
+        eval_json = []
+        for eval_data_path in data_args.eval_data_paths: # BSC: To combine different data files
+            eval_json += json.load(open(eval_data_path, "r"))
+        random.shuffle(eval_json)
+        eval_size = int(len(train_dataset) / 10) # limiting size of eval dataset to 10% of train set
         eval_json = eval_json[:eval_size]
         eval_dataset = dataset_cls(eval_json, tokenizer=tokenizer, conv=conv)
+        rank0_print(f"Eval Dataset: {len(eval_dataset)}")
     else:
         eval_dataset = None
 
@@ -400,7 +424,6 @@ def train():
         scaling_factor = float(math.ceil(training_args.model_max_length / orig_ctx_len))
         config.rope_scaling = {"type": "linear", "factor": scaling_factor}
     config.use_cache = False
-
     # Load model and tokenizer
     model = transformers.AutoModelForCausalLM.from_pretrained(
         model_args.model_name_or_path,
@@ -408,6 +431,7 @@ def train():
         cache_dir=training_args.cache_dir,
         trust_remote_code=model_args.trust_remote_code,
     )
+
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         tokenizer_name_or_path,
         cache_dir=training_args.cache_dir,

@@ -105,7 +105,7 @@ class Conversation:
         # BSC: get prompt with tokenizer.
         if self.sep_style in [SeparatorStyle.CHATML_TEMPLATE, SeparatorStyle.DOLLY_TEMPLATE]:
             pattern = "[\s\S]*?"
-            regex = tokenizer.apply_chat_template([{"role": self.roles[1], "content": pattern}], tokenize=False, add_generation_prompt=False).strip()
+            regex = tokenizer.apply_chat_template([{"role": self.roles[1], "content": pattern}], tokenize=False, add_generation_prompt=False) #.strip()
             toEscape = regex.split(pattern)
             return f"{re.escape(toEscape[0])}({pattern}{re.escape(toEscape[1])})"
         else:
