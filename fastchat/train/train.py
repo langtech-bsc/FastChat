@@ -371,7 +371,7 @@ def make_supervised_data_module(
         print(data_path)
         train_json += json.load(open(data_path, "r"))
     random.shuffle(train_json)
-    # train_json = train_json[:3000] # TODO: DELETE AFTER TESTS!!
+    train_json = train_json[:1000] # TODO: DELETE AFTER TESTS!!
 
     elapsed = timeit.default_timer() - start_time
     rank0_print(f">>>>>LOAD DATA TIME: {elapsed} sec")
