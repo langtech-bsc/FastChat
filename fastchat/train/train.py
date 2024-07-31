@@ -202,8 +202,7 @@ def preprocess_bsc_chat(
 
         else: # conversation was truncated
             target[:] = IGNORE_TOKEN_ID # Ignoring it
-            dropped_conv_counter +=1
-            # print(f"WARNING: Filtered conversation due to truncated:\n{conversation}")
+            rank0_print(f"WARNING: Filtered conversation due to truncated:\n{conversation}\n")
 
 
     
