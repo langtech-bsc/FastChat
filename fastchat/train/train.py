@@ -32,10 +32,11 @@ import re
 import os
 import psutil
 import timeit
+import sys 
 
 current_directory = os.path.dirname(os.path.realpath(__file__))
-# parent_directory = os.path.dirname(current_directory + '/../../..')
-# sys.path.append(parent_directory)
+parent_directory = os.path.dirname(current_directory + '/../../..')
+sys.path.append(parent_directory)
 
 from fastchat.conversation import SeparatorStyle, get_conv_template, Conversation
 
