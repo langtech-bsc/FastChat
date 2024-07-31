@@ -78,7 +78,7 @@ class Conversation:
     # The system message
     system_message: str = ""
     # BSC: system role
-    chat_template: str|None = None
+    chat_template: Union[str, None] = None
     # BSC: chat template
     system_role: str = "SYSTEM"
     system_message_vision: str = ""
