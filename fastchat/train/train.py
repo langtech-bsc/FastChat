@@ -369,10 +369,9 @@ def make_supervised_data_module(
     start_time = timeit.default_timer()
     train_json = []
     for data_path in data_args.data_paths: # BSC: To combine different data files
-        print(data_path)
         train_json += json.load(open(data_path, "r"))
     random.shuffle(train_json)
-    train_json = train_json[:1000] # TODO: DELETE AFTER TESTS!!
+    # train_json = train_json[:1000] # TODO: DELETE AFTER TESTS!!
 
     elapsed = timeit.default_timer() - start_time
     rank0_print(f">>>>>LOAD DATA TIME: {elapsed} sec")
