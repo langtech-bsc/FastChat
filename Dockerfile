@@ -1,34 +1,21 @@
-FROM nvidia/cuda:12.5.1-cudnn-runtime-ubuntu20.04
+FROM nvidia/cuda:12.2.0-runtime-ubuntu20.04
 
-# Set environment variable to noninteractive to handle tzdata prompt
 ENV DEBIAN_FRONTEND=noninteractive
-
-# Set the time zone to avoid tzdata prompt
 ENV TZ=Europe/Madrid
 
-# Update the package list and install required packages
-RUN apt-get -y update && \
-    apt-get install -y tzdata && \
+RUN apt-get update -y && \
     apt-get install -y \
-    git \
     python3.9 \
-    python3-pip \
-    build-essential \
-    cmake \
+    python3.9-distutils \
     curl \
-    vim \
-    ca-certificates \
-    libjpeg-dev \
-    libpng-dev \
-    && rm -rf /var/lib/apt/lists/*
+    git
 
-# Upgrade pip
-RUN pip3 install --upgrade pip
+RUN curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
+RUN python3.9 get-pip.py
 
 RUN mkdir app
 
 WORKDIR /app
-
 
 # Clone the FastChat repository
 RUN git clone https://github.com/langtech-bsc/FastChat.git

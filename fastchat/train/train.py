@@ -184,6 +184,11 @@ def preprocess_bsc_chat(
                 ignore_parts.append((cur_len, end_token))
                 start = match[1]
                 cur_len = bos + len(tokenizer.tokenize(conversation[:start]))
+                
+            end = start + len(conversation[start:])
+            end_token = cur_len + len(tokenizer.tokenize(conversation[start: end]))
+            ignore_parts.append((cur_len, end_token))
+            cur_len = bos + len(tokenizer.tokenize(conversation))
             ignore_parts.append((cur_len, None))
             for ignore in ignore_parts:
                 target[ignore[0]: ignore[1]] = IGNORE_TOKEN_ID
