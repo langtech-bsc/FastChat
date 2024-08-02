@@ -46,17 +46,17 @@ setup(
     },
     include_package_data=True,
     zip_safe=False,
-    # entry_points={
-    #     'console_scripts': [
-    #         'train=fastchat.train.train:train',
-    #         'train_baichuan=fastchat.train.train_baichuan:train_baichuan',
-    #         'train_lora=fastchat.train.train_lora:train_lora',
-    #         'train_mem=fastchat.train.train_mem:train_mem',
-    #         'train_with_template=fastchat.train.train_with_template:train_with_template',
-    #         'train_yuan2=fastchat.train.train_yuan2:train_yuan2',
-    #         'train_flant5=fastchat.train.train_flant5:train_flant5',
-    #         'train_lora_t5=fastchat.train.train_lora_t5:train_lora_t5',
-    #         'train_xformers=fastchat.train.train_xformers:train_xformers',
-    #     ],
-    # },
+    entry_points={
+        'console_scripts': [
+            'train=fastchat.train.train:train',
+            'train_baichuan=fastchat.train.train_baichuan:train_baichuan',
+            'train_lora=fastchat.train.train_lora:train_lora',
+            'train_mem=fastchat.train.train_mem:train_mem',
+            'train_with_template=fastchat.train.train_with_template:train_with_template',
+            'train_yuan2=fastchat.train.train_yuan2:train_yuan2',
+            'train_flant5=fastchat.train.train_flant5:train_flant5',
+            'train_lora_t5=fastchat.train.train_lora_t5:train_lora_t5',
+            'train_xformers=fastchat.train.train_xformers:train_xformers',
+        ],
+    },
 )
