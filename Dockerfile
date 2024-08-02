@@ -29,6 +29,7 @@ RUN mkdir app
 
 WORKDIR /app
 
+
 # Clone the FastChat repository
 RUN git clone https://github.com/langtech-bsc/FastChat.git
 
