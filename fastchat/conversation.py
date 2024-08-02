@@ -45,27 +45,53 @@ class SeparatorStyle(IntEnum):
 
 IMAGE_PLACEHOLDER_STR = "$$<image>$$"
 
-def format_instruction(self, instruction: str, context: str, metadata: dict = None) -> str:
+def format_instruction(self, instruction: str, instruction_input: str, metadata: dict = None) -> str:
         '''
         (BSC)
+        Formats complex instruction (instruction + input) applying random templates.
+
         Arguments
         ---------
         instruction : str
             body of the instruction (e.g. summaryze the following text)
-        context : str
-            context for the instruction (e.g. text to summarize)
+        instruction_input : str
+            input of the instruction (e.g. text to summarize)
         
         Returns
         -------
         message : str
             resulting message containing instruction + input applying random formatting
         '''
+        formats = [
+            { # input encapsulated in " "
+                "quotation" : '"',
+                "separator" : ''
+            },
+            { # input separated by \n and between ""
+                "quotation" : '"',
+                "separator" : '\n'
+            },
+            { # input encapsulated in ' '
+                "quotation" : "'",
+                "separator" : ''
+            },
+            { # input separated by \n and between ''
+                "quotation" : "'",
+                "separator" : '\n'
+            },
+            { # input separated by \n
+                "quotation" : '',
+                "separator" : '\n'
+            }
+        ]
 
-        # categories on which context must be shown prior to the instruction
-        if "category" in metadata and metadata["category"] in [ "closed_qa", "qa"]: # we put the context before the instruction
-            return f"Context:\n{context}\n\nQuestion:\n{instruction}"
-        
-        return f"Question:\n{instruction}\n\nContext:\n{context}"
+        random_format = random.choice(formats)
+        if "category" in metadata and metadata["category"] in ["closed_qa", "qa"]:# categories on which context must be shown prior to the instruction
+             # we put the context before the instruction
+            ret = random_format["quotation"] + instruction_input + random_format["quotation"] + random_format["separator"] + instruction
+        else: # otherwise we put the context after the instruction
+            ret = instruction + random_format["separator"] + random_format["quotation"] + instruction_input + random_format["quotation"]
+        return ret
 
 @dataclasses.dataclass
 class Conversation:
