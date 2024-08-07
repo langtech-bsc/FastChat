@@ -486,5 +486,6 @@ if __name__ == "__main__":
         idx = sys.argv.index('--deepspeed') + 1
         if '/' not in sys.argv[idx] and '\\' not in sys.argv[idx] :
             sys.argv[idx] = str(importlib.resources.path("fastchat.deepspeed_configs", sys.argv[idx]))
+            print(sys.argv[idx])
 
     train()
