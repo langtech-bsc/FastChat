@@ -40,11 +40,15 @@ setup(
     extras_require={
         "model_worker": ["accelerate>=0.21", "peft", "sentencepiece", "torch>=2.4.0", "transformers>=4.31.0", "protobuf"],
         "webui": ["gradio>=4.10"],
-        "train": ["einops", "deepspeed", "wandb", "flash-attn>=2.0"],
+        "train": ["einops", "deepspeed", "wandb"],
+        "flash_attn2":["flash-attn>=2.0"],
         "llm_judge": ["openai<1", "anthropic>=0.3", "ray"],
         "dev": ["black==23.3.0", "pylint==2.8.2"],
     },
     include_package_data=True,
+    package_data={
+        'fastchat': ['deepspeed_configs/*.json'],
+    },
     zip_safe=False,
     entry_points={
         'console_scripts': [

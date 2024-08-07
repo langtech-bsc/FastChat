@@ -28,6 +28,7 @@ from torch.utils.data import Dataset
 import transformers
 from transformers import Trainer
 from transformers.trainer_pt_utils import LabelSmoother
+import importlib.resources
 import re
 import os
 import psutil
@@ -480,4 +481,10 @@ def train():
 
 
 if __name__ == "__main__":
+    # If deepspeed os from package or outside of package.
+    if '--deepspeed' in sys.argv:
+        idx = sys.argv.index('--deepspeed') + 1
+        if '/' not in sys.argv[idx] and '\\' not in sys.argv[idx] :
+            sys.argv[idx] = str(importlib.resources.path("fastchat.deepspeed_configs", sys.argv[idx]))
+
     train()

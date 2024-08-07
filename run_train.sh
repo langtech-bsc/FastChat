@@ -20,7 +20,7 @@ export WORLD_SIZE=30
 
 
 torchrun $DIST_ARGS -m fastchat.train.train \
-    --deepspeed /home/arana/Documents/langtech/FastChat/deepspeed_configs/ds_type3_config_autombs.json \
+    --deepspeed ds_type3_config_autombs.json \
     --model_name_or_path $HOME/Documents/langtech/converted_7b_8k_step_1390000_hf \
     --tokenizer_name_or_path $HOME/Documents/langtech/converted_7b_8k_step_1390000_hf \
     --data_paths \
