@@ -147,6 +147,8 @@ def preprocess_bsc_chat(
             role = roles[sentence["from"]]
             assert role == conv.roles[j % 2], f"{i}, \nErroneous source: {source}"
             conv.append_message(role, sentence["value"])
+
+        print(len(tokenizer.tokenize(conv.get_prompt(tokenizer=tokenizer, metadata=metadata))))
         conversations.append(conv.get_prompt(tokenizer=tokenizer, metadata=metadata))
             
 
@@ -482,11 +484,12 @@ def train():
 
 if __name__ == "__main__":
     # If deepspeed os from package or outside of package.
+    # When you install it by pip install ., it will add deepspeed_configs/* to the package so you can read it.
+    # If you need to pass config file from current directory you can do: --deepspeed ./config.json
     if '--deepspeed' in sys.argv:
         idx = sys.argv.index('--deepspeed') + 1
         if '/' not in sys.argv[idx] and '\\' not in sys.argv[idx] :
             with importlib.resources.path("fastchat.deepspeed_configs", sys.argv[idx]) as path:
                 sys.argv[idx] = str(path)
-                print(sys.argv[idx])
 
     train()
