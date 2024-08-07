@@ -10,6 +10,7 @@ dist
 *.log
 *.log.*
 *.json
+!/fastchat/deepspeed_configs/*
 !playground/deepspeed_config_s2.json
 !playground/deepspeed_config_s3.json
 
