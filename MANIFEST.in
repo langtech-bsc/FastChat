@@ -1,0 +1,1 @@
+recursive-include fastchat/deepspeed_configs *.json
