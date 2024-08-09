@@ -151,7 +151,6 @@ def preprocess_bsc_chat(
         print(len(tokenizer.tokenize(conv.get_prompt(tokenizer=tokenizer, metadata=metadata))))
         conversations.append(conv.get_prompt(tokenizer=tokenizer, metadata=metadata))
             
-
     # Tokenize conversations
     tok_output = tokenizer(
         conversations,
