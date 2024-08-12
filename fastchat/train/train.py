@@ -76,7 +76,7 @@ class ModelArguments:
     )
 
     add_chat_template: Optional[bool] = field(
-        default=False, 
+        default=True, 
         metadata={
             "help": f"Whether or not to add and train the model with the chat template"
         }
