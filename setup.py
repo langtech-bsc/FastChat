@@ -31,14 +31,14 @@ setup(
         "uvicorn",
         "packaging",
         "wheel",
-        "torch>=2.4.0",
+        "torch",
         "transformers>=4.31.0",
         "deepsee",
         "sentencepiece",
         "protobuf"
     ],
     extras_require={
-        "model_worker": ["accelerate>=0.21", "peft", "sentencepiece", "torch>=2.4.0", "transformers>=4.31.0", "protobuf"],
+        "model_worker": ["accelerate>=0.21", "peft", "sentencepiece", "torch", "transformers>=4.31.0", "protobuf"],
         "webui": ["gradio>=4.10"],
         "train": ["einops", "deepspeed", "wandb", "flash-attn>=2.0"],
         "llm_judge": ["openai<1", "anthropic>=0.3", "ray"],
