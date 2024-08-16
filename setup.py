@@ -63,3 +63,5 @@ setup(
         ],
     },
 )
+
+#pip install git+https://github.com/langtech-bsc/FastChat.git#egg=fschatbsc[model_worker,train]

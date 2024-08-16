@@ -148,7 +148,6 @@ def preprocess_bsc_chat(
             assert role == conv.roles[j % 2], f"{i}, \nErroneous source: {source}"
             conv.append_message(role, sentence["value"])
 
-        print(len(tokenizer.tokenize(conv.get_prompt(tokenizer=tokenizer, metadata=metadata))))
         conversations.append(conv.get_prompt(tokenizer=tokenizer, metadata=metadata))
             
     # Tokenize conversations
