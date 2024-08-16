@@ -25,6 +25,7 @@ output
 checkpoints_flant5_3b
 
 # Data
+data/
 *.pkl
 *.csv
 tests/state_of_the_union.txt
