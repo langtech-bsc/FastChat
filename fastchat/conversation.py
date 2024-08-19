@@ -155,9 +155,8 @@ class Conversation:
                         else:
                             message = instruction
                 chat.append({"role": role, "content": message})
-            return tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=False, truncation=True)
+            return tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=False)
    
-        
         elif self.sep_style == SeparatorStyle.ADD_COLON_SINGLE:
             ret = system_prompt + self.sep
             for role, message in self.messages:

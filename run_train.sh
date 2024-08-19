@@ -3,15 +3,8 @@
 # prefix="salamandra7b_baseline_ca_v0.1"
 prefix="salamandra7b_rag_ca-en-es_v0.2"
 
-timestamp=$(date +"%Y%m%d-%H.%M.%S")
-export WANDB_PROJECT="instruction-tuning"
-export WANDB_NAME=$prefix'_'$SLURM_JOBID
-export WANDB_MODE=offline
-export WANDB_INIT_TIMEOUT=600
 export PATH_RESULTS="./"$prefix
-export WANDB_DIR=$PATH_RESULTS
 mkdir -p $WANDB_DIR
-export WANDB_CONFIG_DIR=$WANDB_DIR/config
 
 
 export RANK=2
@@ -21,8 +14,7 @@ export WORLD_SIZE=30
 
 torchrun $DIST_ARGS -m fastchat.train.train \
     --deepspeed ds_type3_config_autombs.json \
-    --model_name_or_path $HOME/Documents/langtech/converted_7b_8k_step_1390000_hf \
-    --tokenizer_name_or_path $HOME/Documents/langtech/converted_7b_8k_step_1390000_hf \
+    --model_name_or_path $HOME/Documents/bsc_2b_hf \
     --data_paths \
         $HOME/Documents/langtech/demo_data.json \
     --eval_data_paths \
@@ -47,5 +39,4 @@ torchrun $DIST_ARGS -m fastchat.train.train \
     --gradient_checkpointing True \
     --add_chat_template True \
     --lazy_preprocess False \
-    --local_rank -1 \
-    --report_to "wandb"
+    --local_rank -1 

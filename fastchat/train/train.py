@@ -445,6 +445,7 @@ def train():
         padding_side=model_args.padding_side,
         use_fast=True,
         trust_remote_code=model_args.trust_remote_code,
+        add_prefix_space=None
     )
 
     if tokenizer.pad_token != tokenizer.unk_token:
