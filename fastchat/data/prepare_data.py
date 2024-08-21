@@ -3,14 +3,21 @@ import argparse
 import random
 import os
 import re
+import logging
+
+
 # ------------------------
 # Reader functions for each of the supported datasets:
 # Usage: python fastchat/data/prepare_data.py --data-path ../data/raw/databricks-dolly-15k/databricks-dolly-15k.jsonl --output-path ../data/processed/vicuna-fastchat/train/databricks-dolly-15k-en.json --lang en
 # 
 
+# Set up logging configuration
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+logger = logging.getLogger(__name__)
+
 roles = ["human", "gpt"]
 
-def check_data(data: list, log_path: str, mode: str) -> list:
+def check_data(data: list, mode: str) -> list:
     '''
     Iterate over prepared data and check that the following conditions are true:
         - used roles are "gpt" and "human".
@@ -21,8 +28,6 @@ def check_data(data: list, log_path: str, mode: str) -> list:
     ### Arguments
     - data: list
         data to check
-    - log_path: str
-        path where errors will be logged (if found)
     - mode: str
         Mode to use when handling found errors. Options:
         - err: an error is raised.
@@ -57,57 +62,64 @@ def check_data(data: list, log_path: str, mode: str) -> list:
                     break
     total_errors = len(err_other_role_idxs) + len(err_human_starts_idxs) + len(err_not_alternating_idxs) + len(err_empty_conversation)
     if total_errors != 0:
-        with open(log_path, 'w') as log:
-            log.write(f"TOTAL ERRORS: {total_errors} (handling mode: {mode})\n")
-            if len(err_other_role_idxs) > 0:
-                log.write("==================\n")
-                log.write(f"OTHER ROLE ERRORS: {len(err_other_role_idxs)}\n")
-                for idx in err_other_role_idxs:
-                    log.write("------------------\n")
-                    log.write(f"Erroneous example (index: {idx}):\n")
-                    log.write(str(data[idx]) + '\n')
-            if len(err_human_starts_idxs) > 0:
-                log.write("==================\n")
-                log.write(f"HUMAN STARTS ERRORS: {len(err_human_starts_idxs)}\n")
-                for idx in err_human_starts_idxs:
-                    log.write("------------------\n")
-                    log.write(f"Erroneous example (index: {idx}):\n")
-                    log.write(str(data[idx]) + '\n')
-            if len(err_not_alternating_idxs) > 0:
-                log.write("==================\n")
-                log.write(f"NOT ALTERNATING ERRORS: {len(err_not_alternating_idxs)}\n")
-                for idx in err_not_alternating_idxs:
-                    log.write("------------------\n")
-                    log.write(f"Erroneous example (index: {idx}):\n")
-                    log.write(str(data[idx]) + '\n')
-            if len(err_empty_conversation) > 0:
-                log.write("==================\n")
-                log.write(f"EMPTY CONVERSATION ERRORS: {len(err_empty_conversation)}\n")
-                for idx in err_empty_conversation:
-                    log.write("------------------\n")
-                    log.write(f"Erroneous example (index: {idx}):\n")
-                    log.write(str(data[idx]) + '\n')
+        logger.error(f"TOTAL ERRORS: {total_errors} (handling mode: {mode})")
+        if len(err_other_role_idxs) > 0:
+            logger.error("==================")
+            logger.error(f"OTHER ROLE ERRORS: {len(err_other_role_idxs)}")
+            for idx in err_other_role_idxs:
+                logger.error("------------------")
+                logger.error(f"Erroneous example (index: {idx}):")
+                logger.error(str(data[idx]))
+            
+        if len(err_human_starts_idxs) > 0:
+            logger.error("==================")
+            logger.error(f"HUMAN STARTS ERRORS: {len(err_human_starts_idxs)}")
+            for idx in err_human_starts_idxs:
+                logger.error("------------------")
+                logger.error(f"Erroneous example (index: {idx}):")
+                logger.error(str(data[idx]))
+
+
+        if len(err_not_alternating_idxs) > 0:
+            logger.error("==================")
+            logger.error(f"NOT ALTERNATING ERRORS: {len(err_not_alternating_idxs)}")
+            for idx in err_not_alternating_idxs:
+                logger.error("------------------")
+                logger.error(f"Erroneous example (index: {idx}):")
+                logger.error(str(data[idx]))
+
+
+        if len(err_empty_conversation) > 0:
+            logger.error("==================")
+            logger.error(f"EMPTY CONVERSATION ERRORS: {len(err_empty_conversation)}")
+            for idx in err_empty_conversation:
+                logger.error("------------------")
+                logger.error(f"Erroneous example (index: {idx}):")
+                logger.error(str(data[idx]))
+
         if mode == "err":
-            raise Exception(f"\n>> ERROR: Dataset NOT saved due to {total_errors} errors. Errors detailed in {log_path}\n>> ERROR: Modify source data or change check_mode to 'drop' or 'warn'")
+            logger.error(f"Dataset NOT saved due to {total_errors} errors. Modify source data or change check_mode to 'drop' or 'warn'.")
+            raise Exception(f"Dataset NOT saved due to {total_errors} errors. Modify source data or change check_mode to 'drop' or 'warn'.")
+    
         elif mode == "drop":
-            print(f">> WARNING: Dataset contains {total_errors} errors. Errors detailed in {log_path}")
-            print(f">> WARNING: Dropping {total_errors} erroneous samples...")
+            logger.warning(f"Dataset contains {total_errors} errors. Dropping {total_errors} erroneous samples...")
             err_idxs = err_other_role_idxs + err_human_starts_idxs + err_not_alternating_idxs + err_empty_conversation
             err_idxs = list(dict.fromkeys(err_idxs))
             for idx in sorted(err_idxs, reverse=True):
                 del data[idx]
+
         elif mode == "warn":
-            print(f">> WARNING: Dataset contains {total_errors} errors. Errors detailed in {log_path}")
-            print(f">> WARNING: Continuing with normal execution")
+            logger.warning(f"Dataset contains {total_errors} errors. Continuing with normal execution.")
+
     else:
-        print("No errors found. No log file created.")
+        logger.info("No errors found. No log file created.")
 
     return data
 
 
 
 def read_json(data_path: str) -> tuple[list, dict]:
-    print("Reading Dolly-type dataset...")
+    logger.info("Reading dataset...")
     try:
         with open(data_path, 'r') as f:
             data = [json.loads(line) for line in f.readlines()]
@@ -121,7 +133,7 @@ def read_json(data_path: str) -> tuple[list, dict]:
 def prepare_basic(args):
     template = args.humman.encode().decode('unicode_escape')
     data = read_json(args.data_path) 
-    print("Preparing and adapting data fields...")
+    logger.info("Preparing and adapting data fields...")
     prep_data = []
     for i, example in enumerate(data):
         prep_example = example.copy()
@@ -151,14 +163,10 @@ def prepare_basic(args):
         prep_data.append(prep_example)
             
 
-    print("Checking dataset...")
-    err_path = os.path.splitext(args.output_path)[0]+'.err'
-    prep_data = check_data(data=prep_data, log_path=err_path, mode=args.check_mode)
+    logger.info("Checking dataset...")
+    prep_data = check_data(data=prep_data, mode=args.check_mode)
+    return prep_data
     
-    print("Saving prepared dataset...")
-    with open(args.output_path, 'w') as out_file:
-        out_file.write(json.dumps(prep_data, indent=2, ensure_ascii=False))
-    print(f"Prepared dataset saved in {args.output_path}")
 
 if __name__=="__main__":
 
@@ -168,9 +176,14 @@ if __name__=="__main__":
     parser.add_argument("--output-path", type=str, required=True, help="Path where the output file will be saved, containing the desired file name.")
     parser.add_argument("--lang", type=str, required=True, help="ISO language code of the language of the dataset (set to 'mm' for multilingual datasets)")
     parser.add_argument("--lang-field", type=str, required=False, default="lang", help="Lang field from source data. Default: 'lang'")
-    parser.add_argument("--humman", type=str, required=False, default="'{istruction}'",help="Humman field that can combine multiple fields. Default: '{istruction}'. E.g, '{prompt}\\n\\nContext:\\n{context}\\n\\nQuestion:\\n{instruction}'")
+    parser.add_argument("--humman", type=str, required=False, default="'{istruction}'",help="Humman field that can combine multiple fields. Default: '{instruction}'. E.g, '{prompt}\\n\\nContext:\\n{context}\\n\\nQuestion:\\n{instruction}'")
     parser.add_argument("--assistent", type=str, required=False, default="response",help="Lang field from source data. Default: 'response'")
     parser.add_argument("--check-mode", type=str, default="err", required=False, help="Mode used when checking prepared data. Options: 'err', 'drop', 'warn'")
     
     args = parser.parse_args()
-    prepare_basic(args)
+    prep_data = prepare_basic(args)
+
+    logger.info("Saving prepared dataset...")
+    with open(args.output_path, 'w') as out_file:
+        out_file.write(json.dumps(prep_data, indent=2, ensure_ascii=False))
+    logger.info(f"Prepared dataset saved in {args.output_path}")
