@@ -450,6 +450,38 @@ def train():
         add_prefix_space=None
     )
 
+    special_tokens_to_add = ['<|im_start|>', '<|im_end|>']
+    eos_token = '<|im_end|>'
+    existing_special_tokens = set()
+
+    # Iterate through dictionary values
+    special_tokens_map = tokenizer.special_tokens_map
+    for value in special_tokens_map.values():
+        if isinstance(value, list):
+            # Add tokens from list
+            existing_special_tokens.update(value)
+        elif isinstance(value, str):
+            # Add single token
+            existing_special_tokens.add(value)
+
+    
+    existing_additional_special_tokens = special_tokens_map.get('additional_special_tokens', [])
+    tokens_to_add = list(set(special_tokens_to_add) - existing_special_tokens)
+
+    # Add missing special tokens to the tokenizer, preserving the existing ones
+    if tokens_to_add:
+        tokenizer.add_special_tokens({
+            'additional_special_tokens': existing_additional_special_tokens + tokens_to_add
+        })
+
+        model.resize_token_embeddings(len(tokenizer))
+        
+    
+    if tokenizer.eos_token != eos_token:
+        tokenizer.eos_token = eos_token
+        # tokenizer.eos_token_id = tokenizer.convert_tokens_to_ids(eos_token)
+
+
     if tokenizer.pad_token != tokenizer.unk_token:
         tokenizer.pad_token = tokenizer.unk_token
 
