@@ -4,7 +4,6 @@
 prefix="salamandra7b_rag_ca-en-es_v0.2"
 
 export PATH_RESULTS="./"$prefix
-mkdir -p $WANDB_DIR
 
 
 export RANK=2
@@ -38,5 +37,4 @@ torchrun $DIST_ARGS -m fastchat.train.train \
     --model_max_length 4096 \
     --gradient_checkpointing True \
     --add_chat_template True \
-    --lazy_preprocess False \
-    --local_rank -1 
+    --lazy_preprocess False

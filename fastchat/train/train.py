@@ -411,7 +411,9 @@ def train():
         (ModelArguments, DataArguments, TrainingArguments)
     )
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
-    local_rank = training_args.local_rank
+    local_rank = os.environ.get("SLURM_PROCID", None) if os.environ.get("SLURM_PROCID", None) else os.environ.get("RANK", None)
+    if local_rank is None:
+        local_rank = training_args.local_rank
 
     # BSC: get tokenizer path if different
     tokenizer_name_or_path = model_args.model_name_or_path
