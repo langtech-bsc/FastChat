@@ -26,6 +26,7 @@ checkpoints_flant5_3b
 
 # Data
 data/
+!fastchat/data/
 *.pkl
 *.csv
 tests/state_of_the_union.txt
