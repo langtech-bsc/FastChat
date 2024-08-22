@@ -31,8 +31,6 @@ setup(
         "uvicorn",
         "packaging",
         "wheel",
-        "torch",
-        "transformers>=4.31.0,<=4.44.0",
         "deepsee",
         "sentencepiece",
         "protobuf"
