@@ -469,6 +469,7 @@ def train():
 
     # Add missing special tokens to the tokenizer, preserving the existing ones
     if tokens_to_add:
+        print("Adding special tokens:", tokens_to_add)
         tokenizer.add_special_tokens({
             'additional_special_tokens': existing_additional_special_tokens + tokens_to_add
         })
@@ -483,6 +484,8 @@ def train():
 
     if tokenizer.pad_token != tokenizer.unk_token:
         tokenizer.pad_token = tokenizer.unk_token
+
+    
 
     # BSC: Adding special tokens
     # tokenizer.add_special_tokens({"additional_special_tokens": ["<|im_start|>"]})
