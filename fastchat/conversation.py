@@ -130,10 +130,14 @@ class Conversation:
         """Get the optimation parts of generation."""
         # BSC: get prompt with tokenizer.
         if self.sep_style in [SeparatorStyle.CHATML_TEMPLATE, SeparatorStyle.DOLLY_TEMPLATE]:
-            pattern = "[\s\S]*?"
-            regex = tokenizer.apply_chat_template([{"role": self.roles[1], "content": pattern}], tokenize=False, add_generation_prompt=False).strip()
-            toEscape = regex.split(pattern)
-            return f"{re.escape(toEscape[0])}({pattern}{re.escape(toEscape[1])})"
+            # pattern = "[\s\S]*?"
+            # regex = tokenizer.apply_chat_template([{"role": self.roles[1], "content": pattern}], tokenize=False, add_generation_prompt=False).strip()
+            # toEscape = regex.split(pattern)
+            # return f"{re.escape(toEscape[0])}({pattern}{re.escape(toEscape[1])})"
+        
+            pattern = "============"
+            output = tokenizer.apply_chat_template([{"role": self.roles[1], "content": pattern}], tokenize=False, add_generation_prompt=False).strip()
+            return output.split(pattern)
         else:
             raise ValueError(f"Invalid style on get_optimization_parts: {self.sep_style}")
    

@@ -6,7 +6,7 @@ prefix="salamandra7b_rag_ca-en-es_v0.2"
 export PATH_RESULTS="./"$prefix
 
 
-export RANK=2
+export RANK=0
 export WORLD_SIZE=30
 
 
@@ -15,9 +15,9 @@ torchrun $DIST_ARGS -m fastchat.train.train \
     --deepspeed ds_type3_config_autombs.json \
     --model_name_or_path $HOME/Documents/bsc_2b_hf \
     --data_paths \
-        $HOME/Documents/langtech/demo_data.json \
+        $HOME/Documents/train_ml.json \
     --eval_data_paths \
-        $HOME/Documents/langtech/demo_data.json \
+        $HOME/Documents/train_ml.json \
     --bf16 True \
     --output_dir $PATH_RESULTS \
     --num_train_epochs 1 \
@@ -38,3 +38,4 @@ torchrun $DIST_ARGS -m fastchat.train.train \
     --gradient_checkpointing True \
     --add_chat_template True \
     --lazy_preprocess False
+    --local_rank = 0

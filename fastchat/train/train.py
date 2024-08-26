@@ -21,6 +21,7 @@ import pathlib
 from typing import Dict, Optional, Sequence
 from enum import auto, IntEnum
 import random
+from multiprocessing import Lock
 
 import numpy as np
 import torch
@@ -35,6 +36,7 @@ import psutil
 import timeit
 import sys 
 
+lock = Lock()
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # current_directory = os.path.dirname(os.path.realpath(__file__))
 # parent_directory = os.path.dirname(current_directory + '/../../..')
@@ -43,12 +45,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 from fastchat.conversation import SeparatorStyle, get_conv_template, Conversation
 
 IGNORE_TOKEN_ID = LabelSmoother.ignore_index
-special_chars = r'.^$*+?{}[]\|()'
-pattern = re.compile(f"([{re.escape(special_chars)}])")
 
-
-def escape_special_characters_except_newline(text):
-    return pattern.sub(r'\\\1', text)
     
 class PreProcessStyle(IntEnum):
     """Separator styles."""
@@ -163,7 +160,7 @@ def preprocess_bsc_chat(
     targets = input_ids.clone()
     
     optimization_printed=False
-    regex = conv.get_optimization_parts(tokenizer)
+    start_assistant, end = conv.get_optimization_parts(tokenizer)
     for j, (conversation, target) in enumerate(zip(conversations, targets)):
         if 0 in att_masks[i]:
             total_len = int(target.ne(tokenizer.pad_token_id).sum())
@@ -175,33 +172,38 @@ def preprocess_bsc_chat(
                 bos = 1 # Gemma Tokenizer adds bos token
             target[:bos] = IGNORE_TOKEN_ID
 
-            ignore_parts = []
-            start = 0
             cur_len = bos
-            matches = [(l.start(1), l.end(1), l.group(1)) for l in list(re.finditer(regex, conversation))]
-            for match in matches:
-                end = match[0]
-                end_token = cur_len + len(tokenizer.tokenize(conversation[start: end]))
-                ignore_parts.append((cur_len, end_token))
-                start = match[1]
-                cur_len = bos + len(tokenizer.tokenize(conversation[:start]))
+            splits = conversation.split(start_assistant)
+            
+            len_to_ignore = len(tokenizer.tokenize(splits[0]))
+            target[cur_len: cur_len + len_to_ignore] = IGNORE_TOKEN_ID
+            cur_len += len_to_ignore
+            assistant_turns = splits[1:]
+            for turn in assistant_turns:
+                len_to_ignore = len(tokenizer.tokenize(start_assistant))
+                target[cur_len:  cur_len + len_to_ignore] = IGNORE_TOKEN_ID
+                cur_len += len_to_ignore
+
+                parts = turn.split(end)
+                assistant_turn = parts[0] + end
                 
-            end = start + len(conversation[start:])
-            end_token = cur_len + len(tokenizer.tokenize(conversation[start: end]))
-            ignore_parts.append((cur_len, end_token))
-            cur_len = bos + len(tokenizer.tokenize(conversation))
-            ignore_parts.append((cur_len, None))
-            for ignore in ignore_parts:
-                target[ignore[0]: ignore[1]] = IGNORE_TOKEN_ID
+                cur_len += len(tokenizer.tokenize(assistant_turn))
+                if len(parts) > 1:
+                    len_to_ignore = len(tokenizer.tokenize(end.join(parts[1:])))
+                    target[cur_len: cur_len + len_to_ignore] = IGNORE_TOKEN_ID
+                    cur_len += len_to_ignore
+            
+            target[cur_len:] = IGNORE_TOKEN_ID
 
             if not optimization_printed:
-                print("\nCONVERSATION:\n" + conversation + "\nOptimization in ---------->\n" + tokenizer.decode([el for i,el in enumerate(target) if el != IGNORE_TOKEN_ID]) + "\n")
-                optimization_printed = True
+                with lock:
+                    print("\nCONVERSATION:\n" + conversation + "\nOptimization in ---------->\n" + f"'{tokenizer.decode([el for i,el in enumerate(target) if el != IGNORE_TOKEN_ID])}'" + "\n")
+                    optimization_printed = True
 
             if cur_len < tokenizer.model_max_length:
                 if cur_len != total_len:
                     target[:] = IGNORE_TOKEN_ID
-                    rank0_print(
+                    print(
                         f"WARNING: tokenization mismatch: {cur_len} vs. {total_len}."
                         # f" #turn = {len(turns) - 1}. (ignored)"
                     )
@@ -433,12 +435,12 @@ def train():
         config.rope_scaling = {"type": "linear", "factor": scaling_factor}
     config.use_cache = False
     # Load model and tokenizer
-    model = transformers.AutoModelForCausalLM.from_pretrained(
-        model_args.model_name_or_path,
-        config=config,
-        cache_dir=training_args.cache_dir,
-        trust_remote_code=model_args.trust_remote_code,
-    )
+    # model = transformers.AutoModelForCausalLM.from_pretrained(
+    #     model_args.model_name_or_path,
+    #     config=config,
+    #     cache_dir=training_args.cache_dir,
+    #     trust_remote_code=model_args.trust_remote_code,
+    # )
 
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         tokenizer_name_or_path,
@@ -474,7 +476,7 @@ def train():
             'additional_special_tokens': existing_additional_special_tokens + tokens_to_add
         })
 
-        model.resize_token_embeddings(len(tokenizer))
+        # model.resize_token_embeddings(len(tokenizer))
         
     
     if tokenizer.eos_token != eos_token:
