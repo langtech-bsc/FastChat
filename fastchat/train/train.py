@@ -203,7 +203,7 @@ def preprocess_bsc_chat(
             if cur_len < tokenizer.model_max_length:
                 if cur_len != total_len:
                     target[:] = IGNORE_TOKEN_ID
-                    print(
+                    rank0_print(
                         f"WARNING: tokenization mismatch: {cur_len} vs. {total_len}."
                         # f" #turn = {len(turns) - 1}. (ignored)"
                     )
@@ -435,12 +435,12 @@ def train():
         config.rope_scaling = {"type": "linear", "factor": scaling_factor}
     config.use_cache = False
     # Load model and tokenizer
-    # model = transformers.AutoModelForCausalLM.from_pretrained(
-    #     model_args.model_name_or_path,
-    #     config=config,
-    #     cache_dir=training_args.cache_dir,
-    #     trust_remote_code=model_args.trust_remote_code,
-    # )
+    model = transformers.AutoModelForCausalLM.from_pretrained(
+        model_args.model_name_or_path,
+        config=config,
+        cache_dir=training_args.cache_dir,
+        trust_remote_code=model_args.trust_remote_code,
+    )
 
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         tokenizer_name_or_path,
