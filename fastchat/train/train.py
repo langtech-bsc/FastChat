@@ -21,7 +21,6 @@ import pathlib
 from typing import Dict, Optional, Sequence
 from enum import auto, IntEnum
 import random
-from multiprocessing import Lock
 
 import numpy as np
 import torch
@@ -36,7 +35,6 @@ import psutil
 import timeit
 import sys 
 
-lock = Lock()
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # current_directory = os.path.dirname(os.path.realpath(__file__))
 # parent_directory = os.path.dirname(current_directory + '/../../..')
@@ -196,9 +194,8 @@ def preprocess_bsc_chat(
             target[cur_len:] = IGNORE_TOKEN_ID
 
             if not optimization_printed:
-                with lock:
-                    print("\nCONVERSATION:\n" + conversation + "\nOptimization in ---------->\n" + f"'{tokenizer.decode([el for i,el in enumerate(target) if el != IGNORE_TOKEN_ID])}'" + "\n")
-                    optimization_printed = True
+                print("\nCONVERSATION:\n" + conversation + "\nOptimization in ---------->\n" + f"'{tokenizer.decode([el for i,el in enumerate(target) if el != IGNORE_TOKEN_ID])}'" + "\n")
+                optimization_printed = True
 
             if cur_len < tokenizer.model_max_length:
                 if cur_len != total_len:
