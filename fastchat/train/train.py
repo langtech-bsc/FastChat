@@ -473,7 +473,7 @@ def train():
             'additional_special_tokens': existing_additional_special_tokens + tokens_to_add
         })
 
-        # model.resize_token_embeddings(len(tokenizer))
+        model.resize_token_embeddings(len(tokenizer))
         
     
     if tokenizer.eos_token != eos_token:
