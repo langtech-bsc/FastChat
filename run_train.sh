@@ -12,11 +12,11 @@ export WORLD_SIZE=30
 
 torchrun $DIST_ARGS -m fastchat.train.train \
     --deepspeed ds_type3_config_autombs.json \
-    --model_name_or_path $HOME/Documents/bsc_2b_hf \
+    --model_name_or_path $HOME/Documents/mistral_token \
     --data_paths \
-        $HOME/Documents/train_ml.json \
+        $HOME/Documents/langtech/demo_data.json \
     --eval_data_paths \
-        $HOME/Documents/train_ml.json \
+        $HOME/Documents/langtech/demo_data.json \
     --bf16 True \
     --output_dir $PATH_RESULTS \
     --num_train_epochs 1 \
