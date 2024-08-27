@@ -36,9 +36,9 @@ setup(
         "protobuf"
     ],
     extras_require={
-        "model_worker": ["accelerate==0.30.0", "peft==0.10.0", "sentencepiece==0.1.99", "torch", "transformers==4.40.2", "protobuf==4.24.4"],
+        "model_worker": ["accelerate==0.30.0", "peft==0.10.0", "sentencepiece==0.1.99", "torch", "transformers==4.44.0", "protobuf==4.24.4"],
         "webui": ["gradio>=4.10"],
-        "train": ["einops", "deepspeed==0.14.2", "wandb", "mlflow", "flash-attn>=2.0"],
+        "train": ["einops", "deepspeed==0.14.4", "wandb", "mlflow", "flash-attn>=2.0"],
         "llm_judge": ["openai<1", "anthropic>=0.3", "ray"],
         "dev": ["black==23.3.0", "pylint==2.8.2"],
     },

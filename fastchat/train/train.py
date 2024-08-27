@@ -471,6 +471,7 @@ def train():
 
     # Add missing special tokens to the tokenizer, preserving the existing ones
     if tokens_to_add:
+        tokens_to_add.sort()
         print("Adding special tokens:", tokens_to_add)
         tokenizer.add_special_tokens({
             'additional_special_tokens': existing_additional_special_tokens + tokens_to_add
