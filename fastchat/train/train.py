@@ -210,7 +210,7 @@ def preprocess_bsc_chat(
             if not optimization_printed:
                 optimization = tokenizer.decode([el for el in target if el != IGNORE_TOKEN_ID])
                 print(f"\nCONVERSATION:\n{conversation}\nOptimization in ---------->\n'{optimization}'\n")
-                # optimization_printed = True
+                optimization_printed = True
 
             if cur_len < tokenizer.model_max_length:
                 if cur_len != total_len:
