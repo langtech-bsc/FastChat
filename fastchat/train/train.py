@@ -158,8 +158,8 @@ def preprocess_bsc_chat(
     targets = input_ids.clone()
     
     optimization_printed=False
-    regex = conv.get_optimization_parts(tokenizer)
-    # start_assistant, end = conv.get_optimization_parts(tokenizer)
+    # regex = conv.get_optimization_parts(tokenizer)
+    start_assistant, end = conv.get_optimization_parts(tokenizer)
     for j, (conversation, target) in enumerate(zip(conversations, targets)):
         if 0 in att_masks[i]:
             total_len = int(target.ne(tokenizer.pad_token_id).sum())
@@ -172,27 +172,46 @@ def preprocess_bsc_chat(
             target[:bos] = IGNORE_TOKEN_ID
 
             cur_len = bos
-            ignore_parts = []
-            start = 0
-            cur_len = bos
-            matches = [(l.start(1), l.end(1), l.group(1)) for l in list(re.finditer(regex, conversation))]
-            for match in matches:
-                end = match[0]
-                end_token = cur_len + len(tokenizer.tokenize(conversation[start: end]))
-                ignore_parts.append((cur_len, end_token))
-                start = match[1]
-                cur_len = bos + len(tokenizer.tokenize(conversation[:start]))
+            start_tokens_len = len(tokenizer.tokenize(start_assistant))
+            assistant_turns = conversation.split(start_assistant)
 
-            end = start + len(conversation[start:])
-            end_token = cur_len + len(tokenizer.tokenize(conversation[start: end]))
-            ignore_parts.append((cur_len, end_token))
-            cur_len = bos + len(tokenizer.tokenize(conversation))
-            ignore_parts.append((cur_len, None))
-            for ignore in ignore_parts:
-                target[ignore[0]: ignore[1]] = IGNORE_TOKEN_ID
+            cur_len += len(tokenizer.tokenize(assistant_turns[0]))
+            target[:cur_len] = IGNORE_TOKEN_ID
+            for assistant_turn in assistant_turns[1:]:
+                target[cur_len: cur_len + start_tokens_len] = IGNORE_TOKEN_ID
+
+                end_index = assistant_turn.find(end) + len(end)
+
+                cur_len += len(tokenizer.tokenize(assistant_turn[:end_index])) + start_tokens_len
+                to_ignore = len(tokenizer.tokenize(assistant_turn[end_index:]))
+                
+                target[cur_len: cur_len + to_ignore] = IGNORE_TOKEN_ID
+                cur_len += to_ignore
+
+            target[cur_len:] = IGNORE_TOKEN_ID
+            # ignore_parts = []
+            # start = 0
+            # cur_len = bos
+            # matches = [(l.start(1), l.end(1), l.group(1)) for l in list(re.finditer(regex, conversation))]
+            # for match in matches:
+            #     end = match[0]
+            #     end_token = cur_len + len(tokenizer.tokenize(conversation[start: end]))
+            #     ignore_parts.append((cur_len, end_token))
+            #     start = match[1]
+            #     cur_len = bos + len(tokenizer.tokenize(conversation[:start]))
+
+            # end = start + len(conversation[start:])
+            # end_token = cur_len + len(tokenizer.tokenize(conversation[start: end]))
+            # ignore_parts.append((cur_len, end_token))
+            # cur_len = bos + len(tokenizer.tokenize(conversation))
+            # ignore_parts.append((cur_len, None))
+            # for ignore in ignore_parts:
+            #     target[ignore[0]: ignore[1]] = IGNORE_TOKEN_ID
 
             if not optimization_printed:
-                print("\nCONVERSATION:\n" + conversation + "\nOptimization in ---------->\n" + f"'{tokenizer.decode([el for i,el in enumerate(target) if el != IGNORE_TOKEN_ID])}'" + "\n")
+                optimization = tokenizer.decode([el for el in target if el != IGNORE_TOKEN_ID])
+                print(f"\nCONVERSATION:\n{conversation}\nOptimization in ---------->\n'{optimization}'\n")
+                print(cur_len, "==", total_len)
                 optimization_printed = True
 
             if cur_len < tokenizer.model_max_length:
