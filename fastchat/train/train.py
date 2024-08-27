@@ -182,14 +182,16 @@ def preprocess_bsc_chat(
                 target[cur_len:  cur_len + len_to_ignore] = IGNORE_TOKEN_ID
                 cur_len += len_to_ignore
 
-                parts = turn.split(end)
-                assistant_turn = parts[0] + end
+                index  = turn.find(end)
+                if index == -1:
+                    raise ValueError("Input string does not contain " + end) 
+            
+                index += len(end)
+                cur_len += len(tokenizer.tokenize(turn[:index]))
                 
-                cur_len += len(tokenizer.tokenize(assistant_turn))
-                if len(parts) > 1:
-                    len_to_ignore = len(tokenizer.tokenize(end.join(parts[1:])))
-                    target[cur_len: cur_len + len_to_ignore] = IGNORE_TOKEN_ID
-                    cur_len += len_to_ignore
+                len_to_ignore = len(tokenizer.tokenize(turn[index:]))
+                target[cur_len: cur_len + len_to_ignore] = IGNORE_TOKEN_ID
+                cur_len += len_to_ignore
             
             target[cur_len:] = IGNORE_TOKEN_ID
 
@@ -200,7 +202,7 @@ def preprocess_bsc_chat(
             if cur_len < tokenizer.model_max_length:
                 if cur_len != total_len:
                     target[:] = IGNORE_TOKEN_ID
-                    rank0_print(
+                    print(
                         f"WARNING: tokenization mismatch: {cur_len} vs. {total_len}."
                         # f" #turn = {len(turns) - 1}. (ignored)"
                     )
@@ -479,19 +481,11 @@ def train():
     
     if tokenizer.eos_token != eos_token:
         tokenizer.eos_token = eos_token
-        # tokenizer.eos_token_id = tokenizer.convert_tokens_to_ids(eos_token)
-
+        # tokenizer.eos_token_id = tokenizer.convert_tokens_to_ids(eos_token) #It's done internaly automatically
 
     if tokenizer.pad_token != tokenizer.unk_token:
         tokenizer.pad_token = tokenizer.unk_token
 
-    
-
-    # BSC: Adding special tokens
-    # tokenizer.add_special_tokens({"additional_special_tokens": ["<|im_start|>"]})
-    # tokenizer.add_special_tokens({"eos_token": "<|im_end|>"})
-    # model.resize_token_embeddings(len(tokenizer))
-    # model.config.eos_token_id = tokenizer.eos_token_id
     
     conv = get_conv_template("chatml_template")
     if model_args.add_chat_template: # BSC: for using chat template
