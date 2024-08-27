@@ -158,7 +158,8 @@ def preprocess_bsc_chat(
     targets = input_ids.clone()
     
     optimization_printed=False
-    start_assistant, end = conv.get_optimization_parts(tokenizer)
+    regex = conv.get_optimization_parts(tokenizer)
+    # start_assistant, end = conv.get_optimization_parts(tokenizer)
     for j, (conversation, target) in enumerate(zip(conversations, targets)):
         if 0 in att_masks[i]:
             total_len = int(target.ne(tokenizer.pad_token_id).sum())
@@ -171,29 +172,24 @@ def preprocess_bsc_chat(
             target[:bos] = IGNORE_TOKEN_ID
 
             cur_len = bos
-            splits = conversation.split(start_assistant)
-            
-            len_to_ignore = len(tokenizer.tokenize(splits[0]))
-            target[cur_len: cur_len + len_to_ignore] = IGNORE_TOKEN_ID
-            cur_len += len_to_ignore
-            assistant_turns = splits[1:]
-            for turn in assistant_turns:
-                len_to_ignore = len(tokenizer.tokenize(start_assistant))
-                target[cur_len:  cur_len + len_to_ignore] = IGNORE_TOKEN_ID
-                cur_len += len_to_ignore
+            ignore_parts = []
+            start = 0
+            cur_len = bos
+            matches = [(l.start(1), l.end(1), l.group(1)) for l in list(re.finditer(regex, conversation))]
+            for match in matches:
+                end = match[0]
+                end_token = cur_len + len(tokenizer.tokenize(conversation[start: end]))
+                ignore_parts.append((cur_len, end_token))
+                start = match[1]
+                cur_len = bos + len(tokenizer.tokenize(conversation[:start]))
 
-                index  = turn.find(end)
-                if index == -1:
-                    raise ValueError("Input string does not contain " + end) 
-            
-                index += len(end)
-                cur_len += len(tokenizer.tokenize(turn[:index]))
-                
-                len_to_ignore = len(tokenizer.tokenize(turn[index:]))
-                target[cur_len: cur_len + len_to_ignore] = IGNORE_TOKEN_ID
-                cur_len += len_to_ignore
-            
-            target[cur_len:] = IGNORE_TOKEN_ID
+            end = start + len(conversation[start:])
+            end_token = cur_len + len(tokenizer.tokenize(conversation[start: end]))
+            ignore_parts.append((cur_len, end_token))
+            cur_len = bos + len(tokenizer.tokenize(conversation))
+            ignore_parts.append((cur_len, None))
+            for ignore in ignore_parts:
+                target[ignore[0]: ignore[1]] = IGNORE_TOKEN_ID
 
             if not optimization_printed:
                 print("\nCONVERSATION:\n" + conversation + "\nOptimization in ---------->\n" + f"'{tokenizer.decode([el for i,el in enumerate(target) if el != IGNORE_TOKEN_ID])}'" + "\n")
@@ -209,7 +205,7 @@ def preprocess_bsc_chat(
 
         else: # conversation was truncated
             target[:] = IGNORE_TOKEN_ID # Ignoring it
-            rank0_print(f"WARNING: Filtered conversation due to truncated:\n{conversation}\n")
+            print(f"WARNING: Filtered conversation due to truncated:\n{conversation}\n")
 
 
     
@@ -378,7 +374,7 @@ def make_supervised_data_module(
     for data_path in data_args.data_paths: # BSC: To combine different data files
         train_json += json.load(open(data_path, "r"))
     random.shuffle(train_json)
-    train_json = train_json[:1000] # TODO: DELETE AFTER TESTS!!
+    # train_json = train_json[:1000] # TODO: DELETE AFTER TESTS!!
 
     elapsed = timeit.default_timer() - start_time
     rank0_print(f">>>>>LOAD DATA TIME: {elapsed} sec")
@@ -472,7 +468,6 @@ def train():
     # Add missing special tokens to the tokenizer, preserving the existing ones
     if tokens_to_add:
         tokens_to_add.sort()
-        print("Adding special tokens:", tokens_to_add)
         tokenizer.add_special_tokens({
             'additional_special_tokens': existing_additional_special_tokens + tokens_to_add
         })

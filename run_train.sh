@@ -37,4 +37,4 @@ torchrun $DIST_ARGS -m fastchat.train.train \
     --gradient_checkpointing True \
     --add_chat_template True \
     --lazy_preprocess False \
-    --local_rank = 0
+    --local_rank 0
