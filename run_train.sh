@@ -10,7 +10,6 @@ export RANK=0
 export WORLD_SIZE=30
 
 
-
 torchrun $DIST_ARGS -m fastchat.train.train \
     --deepspeed ds_type3_config_autombs.json \
     --model_name_or_path $HOME/Documents/bsc_2b_hf \
@@ -37,5 +36,5 @@ torchrun $DIST_ARGS -m fastchat.train.train \
     --model_max_length 4096 \
     --gradient_checkpointing True \
     --add_chat_template True \
-    --lazy_preprocess False
+    --lazy_preprocess False \
     --local_rank = 0
