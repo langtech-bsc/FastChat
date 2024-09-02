@@ -77,6 +77,14 @@ class ModelArguments:
         }
     )
 
+    function_calling: Optional[bool] = field(
+        default=False, 
+        metadata={
+            "help": f"Whether or not to add and train the model with the chat template"
+        }
+    )
+ 
+
 
 @dataclass
 class DataArguments:
@@ -99,7 +107,6 @@ class TrainingArguments(transformers.TrainingArguments):
             "help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."
         },
     )
-
 
 local_rank = None
 
@@ -125,22 +132,38 @@ def preprocess_bsc_chat(
     tokenizer: transformers.PreTrainedTokenizer,
     conv:Conversation
 ) -> Dict:
-    roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
-    
+    if len(conv.roles) > 2:
+        roles = {"human": conv.roles[0], "gpt": conv.roles[1], "tool": conv.roles[2]}
+    else:
+        roles = {"human": conv.roles[0], "gpt": conv.roles[1], "tool": None}
+
     conversations = []
     
     conversations_key = "conversations"
     for i, raw in enumerate(data):
         source = raw[conversations_key]
         metadata = {k: v for k, v in raw.items() if k != conversations_key}
-        if roles[source[0]["from"]] != conv.roles[0]:
-            # Skip the first one if it is not from human
+        conv.messages = []
+
+        if roles[source[0]["from"]] == conv.system_role:
+            # If first is system role append it.
+            conv.messages.append(conv.system_role, source[0]["value"])
             source = source[1:]
 
-        conv.messages = []
         for j, sentence in enumerate(source):
             role = roles[sentence["from"]]
-            assert role == conv.roles[j % 2], f"{i}, \nErroneous source: {source}"
+            
+            if j == 0:
+                assert role == conv.roles[0], f"{i}, \nErroneous source: {source}"
+            else:
+                old_role = roles[source[j-1]["from"]]
+                if old_role == conv.roles[0]: # After user must be assistant
+                    assert role == conv.roles[1], f"{i}, \nErroneous source: {source}"
+                elif old_role == conv.roles[1]: # After assistant, must be user or tool role
+                    assert role in [conv.roles[0], conv.roles[2]] and role != None, f"{i}, \nErroneous source: {source}"
+                else: # If previous role was tool, next must be assistant or tool
+                    assert role in [conv.roles[1], conv.roles[2]] and role != None, f"{i}, \nErroneous source: {source}"
+
             conv.append_message(role, sentence["value"])
 
         conversations.append(conv.get_prompt(tokenizer=tokenizer, metadata=metadata))
@@ -159,8 +182,7 @@ def preprocess_bsc_chat(
     
     optimization_printed=False
     # regex = conv.get_optimization_parts(tokenizer)
-    start_assistant, end = conv.get_optimization_parts(tokenizer)
-    start_tokens_len = len(tokenizer.tokenize(start_assistant))
+    assistant_start, end = conv.assistant_start, conv.sep2
     for j, (conversation, target) in enumerate(zip(conversations, targets)):
         if 0 in att_masks[i]:
             total_len = int(target.ne(tokenizer.pad_token_id).sum())
@@ -173,9 +195,10 @@ def preprocess_bsc_chat(
 
             cur_len = bos
                
-            splits = conversation.split(start_assistant)
-            assistant_starts = [part + start_assistant for part in splits[:-1]]  # Add delimiter to all but the last part
+            splits = conversation.split(assistant_start)
+            assistant_starts = [part + assistant_start for part in splits[:-1]]  # Add delimiter to all but the last part
             assistant_starts.append(splits[-1])
+            
             cur_len += len(tokenizer.tokenize(assistant_starts[0]))
             target[:cur_len] = IGNORE_TOKEN_ID
             for assistant_start in assistant_starts[1:]:
@@ -500,7 +523,11 @@ def train():
         tokenizer.pad_token = tokenizer.unk_token
 
     
-    conv = get_conv_template("chatml_template")
+    if model_args.function_calling:
+        conv = get_conv_template("chatml_func_template")
+    else:
+        conv = get_conv_template("chatml_template")
+
     if model_args.add_chat_template: # BSC: for using chat template
         tokenizer.chat_template = conv.chat_template
     # Load data

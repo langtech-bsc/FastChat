@@ -13,6 +13,7 @@ from typing import List, Any, Dict, Union, Tuple
 import random
 import re
 
+
 class SeparatorStyle(IntEnum):
     """Separator styles."""
 
@@ -40,6 +41,7 @@ class SeparatorStyle(IntEnum):
     CLLM = auto()
     DEFAULT = auto()
     CHATML_TEMPLATE = auto()
+    CHATML_TEMPLATE_FUNC = auto()
     DOLLY_TEMPLATE = auto()
 
 
@@ -110,6 +112,7 @@ class Conversation:
     system_message_vision: str = ""
     # The names of two roles
     roles: Tuple[str] = ("USER", "ASSISTANT")
+    assistant_start: str = ""
     # All messages. Each item is (role, message).
     # Each message is either a string or a tuple of (string, List[image_url]).
     messages: List[List[str]] = ()
@@ -126,39 +129,35 @@ class Conversation:
     # The maximum image size in megabytes that this model takes in. None means we do not resize the image.
     max_image_size_mb: int = None
 
-    def get_optimization_parts(self, tokenizer=None) -> str:
-        """Get the optimation parts of generation."""
-        # BSC: get prompt with tokenizer.
-        if self.sep_style in [SeparatorStyle.CHATML_TEMPLATE, SeparatorStyle.DOLLY_TEMPLATE]:
-            # pattern = "[\s\S]*?"
-            # regex = tokenizer.apply_chat_template([{"role": self.roles[1], "content": pattern}], tokenize=False, add_generation_prompt=False).strip()
-            # toEscape = regex.split(pattern)
-            # return f"{re.escape(toEscape[0])}({pattern}{re.escape(toEscape[1])})"
-            pattern = "============"
-            output = tokenizer.apply_chat_template([{"role": self.roles[1], "content": pattern}], tokenize=False, add_generation_prompt=False).strip()
-            return output.split(pattern)
-        else:
-            raise ValueError(f"Invalid style on get_optimization_parts: {self.sep_style}")
-   
     def get_prompt(self, tokenizer=None, metadata: dict = None) -> str:
         """Get the prompt for generation."""
         system_prompt = self.system_template.format(system_message=self.system_message)
         # BSC: get prompt with tokenizer.
         if self.sep_style in [SeparatorStyle.CHATML_TEMPLATE, SeparatorStyle.DOLLY_TEMPLATE]:
-            if system_prompt != "":
+            if system_prompt != "" and self.messages[0][0] != self.system_role: # Check if system role already provided in conversation.
                 chat = [{"role": self.system_role, "content": system_prompt}]
             else:
                 chat = []
             for i, (role, message) in enumerate(self.messages):
+                tool_calls = None
                 if message:
                     if type(message) is list:
-                        instruction, context = message
-                        if context != "":
-                            message = self.format_instruction(instruction, context, metadata)
+                        if role == self.roles[0]:
+                            instruction, context = message
+                            if context != "":
+                                message = self.format_instruction(instruction, context, metadata)
+                            else:
+                                message = instruction
                         else:
-                            message = instruction
-                chat.append({"role": role, "content": message})
-            return tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=False)
+                            tool_calls = message
+                    
+
+                if tool_calls is not None:
+                    chat.append({"role": role, "content": "", "tool_calls": tool_calls})
+                else:
+                    chat.append({"role": role, "content": message})
+
+            return tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=False, tools=metadata.get("tools", None))
    
         elif self.sep_style == SeparatorStyle.ADD_COLON_SINGLE:
             ret = system_prompt + self.sep
@@ -703,6 +702,7 @@ class Conversation:
             messages=[[x, y] for x, y in self.messages],
             offset=self.offset,
             sep_style=self.sep_style,
+            assistant_start=self.assistant_start,
             sep=self.sep,
             sep2=self.sep2,
             stop_str=self.stop_str,
@@ -2171,7 +2171,92 @@ register_conv_template(
         roles=("user", "assistant"),
         sep_style=SeparatorStyle.CHATML_TEMPLATE,
         sep="<|im_start|>",
-        sep2="<|im_end|>\n",
+        assistant_start="<|im_start|>assistant\n",
+        sep2="<|im_end|>",
+    )
+)
+
+register_conv_template(
+    Conversation(
+        name="chatml_func_template",
+        system_message="",
+        system_role="system",
+        roles=("user", "assistant", "tool"),
+        sep_style=SeparatorStyle.CHATML_TEMPLATE_FUNC,
+        sep="<|im_start|>",
+        assistant_start="<|im_start|>assistant\n",
+        sep2="<|im_end|>",
+        chat_template="""
+{%- set tools = tools if tools is defined else None -%}
+{%- set date_string = date_string if date_string is defined else "1 Sep 2024" -%}
+
+{%- set system_message = messages[0].content if messages[0].role == "system" else "" -%}
+{%- set messages = messages[1:] if messages[0].role == "system" else messages -%}
+
+{# Initialize tools_message if tools are not None #}
+{% set ns = namespace(tools_message="") %}
+{%- if tools is not none -%}
+    {%- set ns.tools_message="You are a function-calling AI model. You are provided with function signatures within <tools> </tools> XML tags. You may call one or more functions to assist with the user query. Don't make assumptions about what values to plug into functions.\n<tools>\n" -%}
+    {%- set ns.tools_message = ns.tools_message +  tools | tojson -%} 
+    {# tojson(indent=4) #}
+    {%- set ns.tools_message=ns.tools_message + '\n</tools>\nFor each function call return a json object with function name and arguments within <tool_call> </tool_call> tags with the following schema:\n<tool_call>\n{"name": <function-name>, "arguments": <args-dict>}\n</tool_call>\n' -%}
+{%- endif -%}
+
+{# Generate the system section if system_message or tools_message exists #}
+{%- if system_message or ns.tools_message -%}
+{{- '<|im_start|>system\n' + ns.tools_message + system_message + '<|im_end|>\n'}}
+{%- endif -%}
+
+{# Main message loop #}
+{%- for message in messages -%}
+    {%- if message.role == "user" or message.role == "assistant" or message.role == "tool" -%}
+        {%- if loop.first and message.role != "user" -%}
+            {{ raise_exception("Invalid sequence: The first message role must be 'user' after 'system' if provided .") }}
+        {%- endif -%}
+
+        {%- if not loop.first and message.role in ["user", "assistant"] and message.role == loop.previtem.role -%}
+            {{ raise_exception("Invalid sequence: Consecutive messages cannot have the same role ('user' or 'assistant').") }}
+        {%- endif -%}
+
+        {%- if message.role == "user" and not loop.first and loop.previtem.role != "assistant" -%}
+            {{ raise_exception("Invalid sequence: A 'user' message must be preceded by an 'assistant' message.") }}
+        {%- endif -%}
+
+        {%- if message.role == "tool" and not loop.first and loop.previtem.role not in ["assistant", "tool"] -%}
+            {{ raise_exception("Invalid sequence: A 'tool' message must be preceded by 'assistant' or 'tool'.") }}
+        {%- endif -%}
+    {%- else -%}
+        {{- raise_exception("Invalid role detected: only 'user', 'assistant', or 'tool' roles are accepted.") }}
+    {%- endif -%}
+    {%- if message.role == "user" or (message.role == "assistant" and message.tool_calls is not defined) -%}
+        {{- '<|im_start|>' + message.role + '\n' + message.content | trim(" ") + '<|im_end|>\n'}}
+    {%- elif message.role == "assistant" -%}
+        {{- '<|im_start|>' + message.role + '\n'}}
+        {%- for tool_call in message.tool_calls -%}
+            {{'<tool_call>\n'}}{ "name": "{{ tool_call.name }}", "arguments": {{ tool_call.arguments | tojson }} }{{'\n</tool_call>\n'}}
+        {%- endfor -%}
+        {{- '<|im_end|>\n' }}
+    {%- elif message.role == "tool" -%}
+        {%- if not message.name is defined -%}
+            {{ raise_exception("Tool response dicts require a 'name' key indicating the name of the called function!") }}
+        {%- endif -%}
+        {%- if loop.previtem and loop.previtem.role != "tool" -%}
+            {{- '<|im_start|>tool\n' }}
+        {%- endif -%}
+        {{- '<tool_response>\n' }} 
+            {{- message.content }}
+        {{- '\n</tool_response>\n' }}
+        {%- if loop.last or loop.nextitem.role != "tool" -%}
+            {{- '<|im_end|>\n'}}
+        {%- endif -%}
+    {%- endif -%}
+{%- endfor -%}
+
+{# Prompt for assistant generation if needed #}
+{%- if add_generation_prompt -%}
+    {{- '<|im_start|>assistant\n' }}
+{%- endif -%}
+"""
     )
 )
 
@@ -2183,7 +2268,7 @@ register_conv_template(
         system_message="",
         roles=("### Instruction", "### Response"),
         sep_style=SeparatorStyle.DOLLY_TEMPLATE,
-        sep="\n\n", 
+        sep="### Response\n", 
         sep2="</s>",
     )
 )
