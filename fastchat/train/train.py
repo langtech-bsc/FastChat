@@ -147,7 +147,11 @@ def preprocess_bsc_chat(
 
         if source[0]["from"] == conv.system_role:
             # If first is system role append it.
-            conv.messages.append(conv.system_role, source[0]["value"])
+            conv.append_message(conv.system_role, source[0]["value"])
+            source = source[1:]
+        
+        if roles[source[0]["from"]] != roles["human"]:
+            # If first is not user
             source = source[1:]
 
         for j, sentence in enumerate(source):
