@@ -80,7 +80,7 @@ class ModelArguments:
     function_calling: Optional[bool] = field(
         default=False, 
         metadata={
-            "help": f"Whether or not to add and train the model with the chat template"
+            "help": f"Whether or not to add and train the model with function calling template template"
         }
     )
  
@@ -130,7 +130,7 @@ def trainer_save_model_safe(trainer: transformers.Trainer):
 def preprocess_bsc_chat(
     data,
     tokenizer: transformers.PreTrainedTokenizer,
-    conv:Conversation
+    conv:Conversation,
 ) -> Dict:
     if len(conv.roles) > 2:
         roles = {"human": conv.roles[0], "gpt": conv.roles[1], "tool": conv.roles[2]}

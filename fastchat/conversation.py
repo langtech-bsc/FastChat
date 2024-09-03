@@ -132,8 +132,9 @@ class Conversation:
     def get_prompt(self, tokenizer=None, metadata: dict = None) -> str:
         """Get the prompt for generation."""
         system_prompt = self.system_template.format(system_message=self.system_message)
+
         # BSC: get prompt with tokenizer.
-        if self.sep_style in [SeparatorStyle.CHATML_TEMPLATE, SeparatorStyle.DOLLY_TEMPLATE]:
+        if self.sep_style == SeparatorStyle.CHATML_TEMPLATE_FUNC:
             if system_prompt != "" and self.messages[0][0] != self.system_role: # Check if system role already provided in conversation.
                 chat = [{"role": self.system_role, "content": system_prompt}]
             else:
@@ -156,6 +157,26 @@ class Conversation:
                     chat.append({"role": role, "content": "", "tool_calls": tool_calls})
                 else:
                     chat.append({"role": role, "content": message})
+
+            return tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=False, tools=metadata.get("tools", None))
+
+        # BSC: get prompt with tokenizer.
+        if self.sep_style == SeparatorStyle.CHATML_TEMPLATE:
+            if system_prompt != "" and self.messages[0][0] != self.system_role: # Check if system role already provided in conversation.
+                chat = [{"role": self.system_role, "content": system_prompt}]
+            else:
+                chat = []
+            for i, (role, message) in enumerate(self.messages):
+                if message:
+                    if type(message) is list:
+                        instruction, context = message
+                        if context != "":
+                            message = self.format_instruction(instruction, context, metadata)
+                        else:
+                            message = instruction
+                    
+
+                chat.append({"role": role, "content": message})
 
             return tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=False, tools=metadata.get("tools", None))
    
