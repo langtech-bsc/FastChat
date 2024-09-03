@@ -167,7 +167,7 @@ def preprocess_bsc_chat(
             conv.append_message(role, sentence["value"])
 
         conversations.append(conv.get_prompt(tokenizer=tokenizer, metadata=metadata))
-            
+
     # Tokenize conversations
     tok_output = tokenizer(
         conversations,

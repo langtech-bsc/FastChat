@@ -2214,18 +2214,22 @@ register_conv_template(
 {%- set system_message = messages[0].content if messages[0].role == "system" else "" -%}
 {%- set messages = messages[1:] if messages[0].role == "system" else messages -%}
 
-{# Initialize tools_message if tools are not None #}
-{% set ns = namespace(tools_message="") %}
-{%- if tools is not none -%}
-    {%- set ns.tools_message="You are a function-calling AI model. You are provided with function signatures within <tools> </tools> XML tags. You may call one or more functions to assist with the user query. Don't make assumptions about what values to plug into functions.\n<tools>\n" -%}
-    {%- set ns.tools_message = ns.tools_message +  tools | tojson -%} 
-    {# tojson(indent=4) #}
-    {%- set ns.tools_message=ns.tools_message + '\n</tools>\nFor each function call return a json object with function name and arguments within <tool_call> </tool_call> tags with the following schema:\n<tool_call>\n{"name": <function-name>, "arguments": <args-dict>}\n</tool_call>\n' -%}
+{%- if system_message or tools -%}
+  {{- '<|im_start|>system\n'}}
 {%- endif -%}
 
-{# Generate the system section if system_message or tools_message exists #}
-{%- if system_message or ns.tools_message -%}
-{{- '<|im_start|>system\n' + ns.tools_message + system_message + '<|im_end|>\n'}}
+{%- if tools  -%}
+  {{- "You are a function-calling AI model. You are provided with function signatures within <tools> </tools> XML tags. You may call one or more functions to assist with the user query. Don't make assumptions about what values to plug into functions.\n<tools>\n" }}
+  {{- tools }}
+  {{- "\n</tools>\nFor each function call return a json object with function name and arguments within <tool_call> </tool_call> tags with the following schema:\n<tool_call>\n{'arguments': <args-dict>, 'name': <function-name>}\n</tool_call>\n" }}
+{%- endif -%}
+
+{%- if system_message %}
+  {{- system_message }}
+{%- endif -%}
+
+{%- if system_message or tools -%}
+  {{- '<|im_end|>\n'}}
 {%- endif -%}
 
 {# Main message loop #}
@@ -2254,7 +2258,7 @@ register_conv_template(
     {%- elif message.role == "assistant" -%}
         {{- '<|im_start|>' + message.role + '\n'}}
         {%- for tool_call in message.tool_calls -%}
-            {{'<tool_call>\n'}}{ "name": "{{ tool_call.name }}", "arguments": {{ tool_call.arguments | tojson }} }{{'\n</tool_call>\n'}}
+            {{'<tool_call>\n'}}{'arguments': {{ tool_call.arguments }}, 'name': '{{ tool_call.name }}'}{{'\n</tool_call>\n'}}
         {%- endfor -%}
         {{- '<|im_end|>\n' }}
     {%- elif message.role == "tool" -%}
