@@ -145,7 +145,7 @@ def preprocess_bsc_chat(
         metadata = {k: v for k, v in raw.items() if k != conversations_key}
         conv.messages = []
 
-        if roles[source[0]["from"]] == conv.system_role:
+        if source[0]["from"] == conv.system_role:
             # If first is system role append it.
             conv.messages.append(conv.system_role, source[0]["value"])
             source = source[1:]
