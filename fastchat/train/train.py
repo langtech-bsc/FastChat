@@ -491,34 +491,13 @@ def train():
         add_prefix_space=False
     )
 
-    special_tokens_to_add = ['<|im_start|>', '<|im_end|>']
     eos_token = '<|im_end|>'
-    existing_special_tokens = set()
+    new_special_tokens = list(set(['<|im_start|>', '<|im_end|>']) - set(tokenizer.all_special_tokens))
 
-    # Iterate through dictionary values
-    special_tokens_map = tokenizer.special_tokens_map
-    for value in special_tokens_map.values():
-        if isinstance(value, list):
-            # Add tokens from list
-            existing_special_tokens.update(value)
-        elif isinstance(value, str):
-            # Add single token
-            existing_special_tokens.add(value)
-
-    
-    existing_additional_special_tokens = special_tokens_map.get('additional_special_tokens', [])
-    tokens_to_add = list(set(special_tokens_to_add) - existing_special_tokens)
-
-    # Add missing special tokens to the tokenizer, preserving the existing ones
-    if tokens_to_add:
-        tokens_to_add.sort()
-        tokenizer.add_special_tokens({
-            'additional_special_tokens': existing_additional_special_tokens + tokens_to_add
-        })
-
+    if new_special_tokens:
+        tokenizer.add_special_tokens({'additional_special_tokens': new_special_tokens.sort()}, replace_additional_special_tokens=False)
         model.resize_token_embeddings(len(tokenizer))
         
-    
     if tokenizer.eos_token != eos_token:
         tokenizer.eos_token = eos_token
         # tokenizer.eos_token_id = tokenizer.convert_tokens_to_ids(eos_token) #It's done internaly automatically
@@ -526,7 +505,6 @@ def train():
     if tokenizer.pad_token != tokenizer.unk_token:
         tokenizer.pad_token = tokenizer.unk_token
 
-    
     if model_args.function_calling:
         conv = get_conv_template("chatml_func_template")
     else:
