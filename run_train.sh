@@ -12,7 +12,7 @@ export WORLD_SIZE=30
 
 torchrun $DIST_ARGS -m fastchat.train.train \
     --deepspeed ds_type3_config_autombs.json \
-    --model_name_or_path $HOME/Documents/mistral_token \
+    --model_name_or_path $HOME/Documents/langtech/FLOR-6.3B \
     --data_paths \
         $HOME/Documents/train_ml.json \
     --eval_data_paths \

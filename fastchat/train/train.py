@@ -495,7 +495,7 @@ def train():
     new_special_tokens = list(set(['<|im_start|>', '<|im_end|>']) - set(tokenizer.all_special_tokens))
 
     if new_special_tokens:
-        tokenizer.add_special_tokens({'additional_special_tokens': new_special_tokens.sort()}, replace_additional_special_tokens=False)
+        tokenizer.add_special_tokens({'additional_special_tokens': new_special_tokens}, replace_additional_special_tokens=False)
         model.resize_token_embeddings(len(tokenizer))
         
     if tokenizer.eos_token != eos_token:
