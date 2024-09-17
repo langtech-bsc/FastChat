@@ -158,15 +158,15 @@ def preprocess_bsc_chat(
             role = roles[sentence["from"]]
             
             if j == 0:
-                assert role == conv.roles[0], f"{i}, \nErroneous source: {source}"
+                assert role == roles["human"], f"{i}, \nErroneous source: {source}"
             else:
                 old_role = roles[source[j-1]["from"]]
-                if old_role == conv.roles[0]: # After user must be assistant
-                    assert role == conv.roles[1], f"{i}, \nErroneous source: {source}"
-                elif old_role == conv.roles[1]: # After assistant, must be user or tool role
-                    assert role in [conv.roles[0], conv.roles[2]] and role != None, f"{i}, \nErroneous source: {source}"
+                if old_role == roles["human"]: # After user must be assistant
+                    assert role == roles["gpt"], f"{i}, \nErroneous source: {source}"
+                elif old_role == roles["gpt"]: # After assistant, must be user or tool role
+                    assert role in [roles["human"], roles["tool"]] and role != None, f"{i}, \nErroneous source: {source}"
                 else: # If previous role was tool, next must be assistant or tool
-                    assert role in [conv.roles[1], conv.roles[2]] and role != None, f"{i}, \nErroneous source: {source}"
+                    assert role in [roles["gpt"], roles["tool"]] and role != None, f"{i}, \nErroneous source: {source}"
 
             conv.append_message(role, sentence["value"])
 
