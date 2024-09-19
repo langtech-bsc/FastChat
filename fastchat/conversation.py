@@ -2262,9 +2262,6 @@ register_conv_template(
         {%- endfor -%}
         {{- '<|im_end|>\n' }}
     {%- elif message.role == "tool" -%}
-        {%- if not message.name is defined -%}
-            {{ raise_exception("Tool response dicts require a 'name' key indicating the name of the called function!") }}
-        {%- endif -%}
         {%- if loop.previtem and loop.previtem.role != "tool" -%}
             {{- '<|im_start|>tool\n' }}
         {%- endif -%}
@@ -2284,6 +2281,9 @@ register_conv_template(
 """
     )
 )
+# {%- if not message.name is defined -%}
+#     {{ raise_exception("Tool response dicts require a 'name' key indicating the name of the called function!") }}
+# {%- endif -%}
 
 # BSC: Dolly template
 register_conv_template(
