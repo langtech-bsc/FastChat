@@ -494,8 +494,10 @@ def train():
     eos_token = '<|im_end|>'
     new_special_tokens = list(set(['<|im_start|>', '<|im_end|>']) - set(tokenizer.all_special_tokens))
 
+    tokens_modified = False
     if new_special_tokens:
         tokenizer.add_special_tokens({'additional_special_tokens': new_special_tokens}, replace_additional_special_tokens=False)
+        tokens_modified = True
         model.resize_token_embeddings(len(tokenizer))
         
     if tokenizer.eos_token != eos_token:
@@ -507,10 +509,14 @@ def train():
 
     if model_args.function_calling:
         conv = get_conv_template("chatml_func_template")
-        #tokenizer.add_tokens(["<tool_call>", "</tool_call>"])
-        #model.resize_token_embeddings(len(tokenizer))
+        tokenizer.add_tokens(["<tool_call>", "</tool_call>"])
+        tokens_modified = True
     else:
         conv = get_conv_template("chatml_template")
+
+    if tokens_modified:
+        model.resize_token_embeddings(len(tokenizer))
+
 
     if model_args.add_chat_template: # BSC: for using chat template
         tokenizer.chat_template = conv.chat_template
