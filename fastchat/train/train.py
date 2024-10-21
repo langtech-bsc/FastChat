@@ -507,6 +507,7 @@ def train():
 
     if model_args.function_calling:
         conv = get_conv_template("chatml_func_template")
+        tokenizer.add_tokens(["<tool_call>", "</tool_call>"])
     else:
         conv = get_conv_template("chatml_template")
 

@@ -2212,7 +2212,9 @@ register_conv_template(
 {%- set date_string = date_string if date_string is defined else "1 Sep 2024" -%}
 
 {%- set system_message = messages[0].content if messages[0].role == "system" else "" -%}
-{%- set messages = messages[1:] if messages[0].role == "system" else messages -%}
+{%- if messages[0].role == "system" -%}
+    {%- set messages = messages[1:] -%}
+{%- endif -%}
 
 {%- if system_message or tools -%}
   {{- '<|im_start|>system\n'}}
@@ -2254,7 +2256,7 @@ register_conv_template(
         {{- raise_exception("Invalid role detected: only 'user', 'assistant', or 'tool' roles are accepted.") }}
     {%- endif -%}
     {%- if message.role == "user" or (message.role == "assistant" and message.tool_calls is not defined) -%}
-        {{- '<|im_start|>' + message.role + '\n' + message.content | trim(" ") + '<|im_end|>\n'}}
+        {{- '<|im_start|>' + message.role + '\n' + message.content | trim + '<|im_end|>\n'}}
     {%- elif message.role == "assistant" -%}
         {{- '<|im_start|>' + message.role + '\n'}}
         {%- for tool_call in message.tool_calls -%}
