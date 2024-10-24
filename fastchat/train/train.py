@@ -234,7 +234,7 @@ def preprocess_bsc_chat(
             # for ignore in ignore_parts:
             #     target[ignore[0]: ignore[1]] = IGNORE_TOKEN_ID
 
-            if not optimization_printed:
+            if not optimization_printed and local_rank == 0:
                 optimization = tokenizer.decode([el for el in target if el != IGNORE_TOKEN_ID])
                 print(f"\nCONVERSATION:\n{conversation}\nOptimization in ---------->\n'{optimization}'\n")
                 optimization_printed = True
@@ -243,13 +243,13 @@ def preprocess_bsc_chat(
                 if cur_len != total_len:
                     target[:] = IGNORE_TOKEN_ID
                     print(
-                        f"WARNING: tokenization mismatch: {cur_len} vs. {total_len}."
+                        f"WARNING: tokenization mismatch: {cur_len} vs. {total_len}:\nCONVERSATION (mismatch):\n{conversation}\n====================\n"
                         # f" #turn = {len(turns) - 1}. (ignored)"
                     )
 
         else: # conversation was truncated
             target[:] = IGNORE_TOKEN_ID # Ignoring it
-            print(f"WARNING: Filtered conversation due to truncated:\n{conversation}\n")
+            print(f"WARNING: Filtered conversation due to truncated:\nCONVERSATION (truncated):\n{conversation}\n====================\n")
 
 
     
