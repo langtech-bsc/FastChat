@@ -158,7 +158,7 @@ class Conversation:
                 else:
                     chat.append({"role": role, "content": message})
 
-            return tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=False, tools=metadata.get("tools", None))
+            return tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=False, tool_prompt=metadata.get("tool_prompt", None), tools=metadata.get("tools", None))
 
         # BSC: get prompt with tokenizer.
         if self.sep_style == SeparatorStyle.CHATML_TEMPLATE:
@@ -2216,18 +2216,24 @@ register_conv_template(
     {%- set messages = messages[1:] -%}
 {%- endif -%}
 
+{%- if not tool_prompt -%}
+    {%- set tool_prompt = "For each function call return a json object with function name and arguments within <tool_call> </tool_call> tags with the following schema:\n<tool_call>\n{'arguments': <args-dict>, 'name': <function-name>}\n</tool_call>" -%}
+{%- endif -%}
+
 {%- if system_message or tools -%}
   {{- '<|im_start|>system\n'}}
 {%- endif -%}
 
-{%- if tools  -%}
-  {{- "You are a function-calling AI model. You are provided with function signatures within <tools> </tools> XML tags. You may call one or more functions to assist with the user query. Don't make assumptions about what values to plug into functions.\n<tools>\n" }}
-  {{- tools }}
-  {{- "\n</tools>\nFor each function call return a json object with function name and arguments within <tool_call> </tool_call> tags with the following schema:\n<tool_call>\n{'arguments': <args-dict>, 'name': <function-name>}\n</tool_call>\n" }}
+{%- if system_message %}
+  {{- system_message + "\n"}}
 {%- endif -%}
 
-{%- if system_message %}
-  {{- system_message }}
+{%- if tools  -%}
+  {{- "You are a function-calling AI model. You are provided with function signatures within <tools> </tools> XML tags. You may call one or more functions to assist with the user query. Don't make assumptions about what values to plug into functions.\n" }}
+  {{- "<tools>\n" }}
+  {{- tools }}
+  {{- "\n</tools>\n" }}
+  {{- tool_prompt -}}
 {%- endif -%}
 
 {%- if system_message or tools -%}

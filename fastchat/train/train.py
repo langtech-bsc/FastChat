@@ -509,7 +509,7 @@ def train():
 
     if model_args.function_calling:
         conv = get_conv_template("chatml_func_template")
-        tokenizer.add_tokens(["<tool_call>", "</tool_call>", "<tools>" ,"</tools>", "<tool_response>", "</tool_response>"])
+        tokenizer.add_special_tokens(list(set(["<tool_call>", "</tool_call>", "<tools>" ,"</tools>", "<tool_response>", "</tool_response>"]) - set(tokenizer.all_special_tokens)))
         tokens_modified = True
     else:
         conv = get_conv_template("chatml_template")
