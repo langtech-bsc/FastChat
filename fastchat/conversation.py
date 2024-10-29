@@ -2207,8 +2207,7 @@ register_conv_template(
         sep="<|im_start|>",
         assistant_start="<|im_start|>assistant\n",
         sep2="<|im_end|>",
-        chat_template="""
-{%- set tools = tools if tools is defined else None -%}
+        chat_template="""{%- set tools = tools if tools is defined else None -%}
 {%- set date_string = date_string if date_string is defined else "1 Sep 2024" -%}
 
 {%- set system_message = messages[0].content if messages[0].role == "system" else "" -%}
@@ -2217,7 +2216,7 @@ register_conv_template(
 {%- endif -%}
 
 {%- if not tool_prompt -%}
-    {%- set tool_prompt = "For each function call return a json object with function name and arguments within <tool_call> </tool_call> tags with the following schema:\n<tool_call>\n{'arguments': <args-dict>, 'name': <function-name>}\n</tool_call>" -%}
+    {%- set tool_prompt = "For each function call return a json object with function name and arguments within <tool_call> </tool_call> tags with the following schema:\n<tool_call>\n{\\\"name\\\": <function-name>, \\\"arguments\\\": <args-dict>}\n</tool_call>" -%}
 {%- endif -%}
 
 {%- if system_message or tools -%}
@@ -2264,9 +2263,15 @@ register_conv_template(
     {%- if message.role == "user" or (message.role == "assistant" and message.tool_calls is not defined) -%}
         {{- '<|im_start|>' + message.role + '\n' + message.content | trim + '<|im_end|>\n'}}
     {%- elif message.role == "assistant" -%}
-        {{- '<|im_start|>' + message.role + '\n'}}
+        {{- '<|im_start|>' + message.role }}
         {%- for tool_call in message.tool_calls -%}
-            {{'<tool_call>\n'}}{'arguments': {{ tool_call.arguments }}, 'name': '{{ tool_call.name }}'}{{'\n</tool_call>\n'}}
+            {{ '\n<tool_call>\n' }}
+              {%- if tool_call.function -%}
+                {"name": "{{ tool_call.function.name }}", "arguments": {{ tool_call.function.arguments | tojson }} }
+              {%- else -%}
+                {"name": "{{ tool_call.name }}", "arguments": {{ tool_call.arguments | tojson }} }
+              {%- endif -%}
+            {{ '\n</tool_call>' }}
         {%- endfor -%}
         {{- '<|im_end|>\n' }}
     {%- elif message.role == "tool" -%}
