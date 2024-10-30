@@ -234,7 +234,7 @@ def preprocess_bsc_chat(
             # for ignore in ignore_parts:
             #     target[ignore[0]: ignore[1]] = IGNORE_TOKEN_ID
 
-            if not optimization_printed and local_rank == 0:
+            if not optimization_printed:
                 optimization = tokenizer.decode([el for el in target if el != IGNORE_TOKEN_ID])
                 print(f"\nCONVERSATION:\n{conversation}\nOptimization in ---------->\n'{optimization}'\n")
                 optimization_printed = True
@@ -415,10 +415,29 @@ def make_supervised_data_module(
 
     start_time = timeit.default_timer()
     train_json = []
+    eval_json = []
     for data_path in data_args.data_paths: # BSC: To combine different data files
-        train_json += json.load(open(data_path, "r"))
-    # random.shuffle(train_json)
+        data_loaded = json.load(open(data_path, "r"))
+        if not data_args.eval_data_paths:
+            random.shuffle(data_loaded)
+            eval_length = int(len(data_loaded) * 0.02)
+            eval_json += data_loaded[:eval_length]
+            data_loaded = data_loaded[eval_length:]
+        
+        train_json += data_loaded
+    
+    random.shuffle(train_json)
     # train_json = train_json[:1000] # TODO: DELETE AFTER TESTS!!
+
+    if data_args.eval_data_paths:
+        eval_json = []
+        for eval_data_path in data_args.eval_data_paths: # BSC: To combine different data files
+            eval_json += json.load(open(eval_data_path, "r"))
+        random.shuffle(eval_json)
+        eval_size = int(len(train_json) / 10) # limiting size of eval dataset to 10% of train set
+        eval_json = eval_json[:eval_size]
+
+    random.shuffle(eval_json)
 
     elapsed = timeit.default_timer() - start_time
     rank0_print(f">>>>>LOAD DATA TIME: {elapsed} sec")
@@ -429,18 +448,9 @@ def make_supervised_data_module(
 
     elapsed = timeit.default_timer() - start_time
     rank0_print(f">>>>>PREPARED DATA TIME: {elapsed} sec")
-
-    if data_args.eval_data_paths:
-        eval_json = []
-        for eval_data_path in data_args.eval_data_paths: # BSC: To combine different data files
-            eval_json += json.load(open(eval_data_path, "r"))
-        random.shuffle(eval_json)
-        eval_size = int(len(train_dataset) / 10) # limiting size of eval dataset to 10% of train set
-        eval_json = eval_json[:eval_size]
-        eval_dataset = dataset_cls(eval_json, tokenizer=tokenizer, conv=conv)
-        rank0_print(f"Eval Dataset: {len(eval_dataset)}")
-    else:
-        eval_dataset = None
+    
+    eval_dataset = dataset_cls(eval_json, tokenizer=tokenizer, conv=conv)
+    rank0_print(f"Eval Dataset: {len(eval_dataset)}")
 
     return dict(train_dataset=train_dataset, eval_dataset=eval_dataset)
 
@@ -452,9 +462,11 @@ def train():
         (ModelArguments, DataArguments, TrainingArguments)
     )
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
-    local_rank = os.environ.get("SLURM_PROCID", None) if os.environ.get("SLURM_PROCID", None) else os.environ.get("RANK", None)
+    local_rank = os.environ.get("SLURM_PROCID", os.environ.get("SLURM_PROCID", None))
     if local_rank is None:
         local_rank = training_args.local_rank
+    
+    local_rank = int(local_rank)
 
     # BSC: get tokenizer path if different
     tokenizer_name_or_path = model_args.model_name_or_path
