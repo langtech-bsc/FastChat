@@ -141,35 +141,39 @@ def preprocess_bsc_chat(
     
     conversations_key = "conversations"
     for i, raw in enumerate(data):
-        source = raw[conversations_key]
-        metadata = {k: v for k, v in raw.items() if k != conversations_key}
-        conv.messages = []
+        try:
+            source = raw[conversations_key]
+            metadata = {k: v for k, v in raw.items() if k != conversations_key}
+            conv.messages = []
 
-        if source[0]["from"] == conv.system_role:
-            # If first is system role append it.
-            conv.append_message(conv.system_role, source[0]["value"])
-            source = source[1:]
-        
-        if roles[source[0]["from"]] != roles["human"]:
-            # If first is not user
-            source = source[1:]
-
-        for j, sentence in enumerate(source):
-            role = roles[sentence["from"]]
+            if source[0]["from"] == conv.system_role:
+                # If first is system role append it.
+                conv.append_message(conv.system_role, source[0]["value"])
+                source = source[1:]
             
-            if j == 0:
-                assert role == roles["human"], f"{i}, \nErroneous source: {source}"
-            else:
-                old_role = roles[source[j-1]["from"]]
-                if old_role == roles["human"]: # After user must be assistant
-                    assert role == roles["gpt"], f"{i}, \nErroneous source: {source}"
-                elif old_role == roles["gpt"]: # After assistant, must be user or tool role
-                    assert role in [roles["human"], roles["tool"]] and role != None, f"{i}, \nErroneous source: {source}"
-                else: # If previous role was tool, next must be assistant or tool
-                    assert role in [roles["gpt"], roles["tool"]] and role != None, f"{i}, \nErroneous source: {source}"
+            if roles[source[0]["from"]] != roles["human"]:
+                # If first is not user
+                source = source[1:]
 
-            conv.append_message(role, sentence["value"])
+            for j, sentence in enumerate(source):
+                role = roles[sentence["from"]]
+                
+                if j == 0:
+                    assert role == roles["human"], f"{i}, \nErroneous source: {source}"
+                else:
+                    old_role = roles[source[j-1]["from"]]
+                    if old_role == roles["human"]: # After user must be assistant
+                        assert role == roles["gpt"], f"{i}, \nErroneous source: {source}"
+                    elif old_role == roles["gpt"]: # After assistant, must be user or tool role
+                        assert role in [roles["human"], roles["tool"]] and role != None, f"{i}, \nErroneous source: {source}"
+                    else: # If previous role was tool, next must be assistant or tool
+                        assert role in [roles["gpt"], roles["tool"]] and role != None, f"{i}, \nErroneous source: {source}"
 
+                conv.append_message(role, sentence["value"])
+        except Exception as Err:
+            print("ERROR ON CONV:", raw)
+            raise Err
+        
         conversations.append(conv.get_prompt(tokenizer=tokenizer, metadata=metadata))
 
     # Tokenize conversations
@@ -234,7 +238,7 @@ def preprocess_bsc_chat(
             # for ignore in ignore_parts:
             #     target[ignore[0]: ignore[1]] = IGNORE_TOKEN_ID
 
-            if not optimization_printed:
+            if not optimization_printed and local_rank == 0:
                 optimization = tokenizer.decode([el for el in target if el != IGNORE_TOKEN_ID])
                 print(f"\nCONVERSATION:\n{conversation}\nOptimization in ---------->\n'{optimization}'\n")
                 optimization_printed = True
