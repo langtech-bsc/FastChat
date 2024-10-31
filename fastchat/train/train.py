@@ -423,25 +423,22 @@ def make_supervised_data_module(
     for data_path in data_args.data_paths: # BSC: To combine different data files
         data_loaded = json.load(open(data_path, "r"))
         if not data_args.eval_data_paths:
-            random.shuffle(data_loaded)
             eval_length = int(len(data_loaded) * 0.02)
             eval_json += data_loaded[:eval_length]
             data_loaded = data_loaded[eval_length:]
         
         train_json += data_loaded
     
-    random.shuffle(train_json)
+    # random.shuffle(train_json)
     # train_json = train_json[:1000] # TODO: DELETE AFTER TESTS!!
 
     if data_args.eval_data_paths:
         eval_json = []
         for eval_data_path in data_args.eval_data_paths: # BSC: To combine different data files
             eval_json += json.load(open(eval_data_path, "r"))
-        random.shuffle(eval_json)
         eval_size = int(len(train_json) / 10) # limiting size of eval dataset to 10% of train set
         eval_json = eval_json[:eval_size]
 
-    random.shuffle(eval_json)
 
     elapsed = timeit.default_timer() - start_time
     rank0_print(f">>>>>LOAD DATA TIME: {elapsed} sec")

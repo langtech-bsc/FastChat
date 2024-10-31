@@ -2290,8 +2290,7 @@ register_conv_template(
 {# Prompt for assistant generation if needed #}
 {%- if add_generation_prompt -%}
     {{- '<|im_start|>assistant\n' }}
-{%- endif -%}
-"""
+{%- endif -%}"""
     )
 )
 # {%- if not message.name is defined -%}
