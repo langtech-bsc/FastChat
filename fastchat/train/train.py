@@ -43,7 +43,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 from fastchat.conversation import SeparatorStyle, get_conv_template, Conversation
 
 IGNORE_TOKEN_ID = LabelSmoother.ignore_index
-
+SEED = 42
     
 class PreProcessStyle(IntEnum):
     """Separator styles."""
@@ -417,19 +417,21 @@ def make_supervised_data_module(
     rank0_print('RAM Used (GB):', psutil.virtual_memory()[3]/1000000000)
 
 
+    random.seed(SEED)
     start_time = timeit.default_timer()
     train_json = []
     eval_json = []
     for data_path in data_args.data_paths: # BSC: To combine different data files
         data_loaded = json.load(open(data_path, "r"))
         if not data_args.eval_data_paths:
-            eval_length = int(len(data_loaded) * 0.02)
+            random.shuffle(data_loaded)
+            eval_length = int(len(data_loaded) * 0.05)
             eval_json += data_loaded[:eval_length]
             data_loaded = data_loaded[eval_length:]
         
         train_json += data_loaded
     
-    # random.shuffle(train_json)
+    random.shuffle(train_json)
     # train_json = train_json[:1000] # TODO: DELETE AFTER TESTS!!
 
     if data_args.eval_data_paths:
@@ -439,6 +441,7 @@ def make_supervised_data_module(
         eval_size = int(len(train_json) / 10) # limiting size of eval dataset to 10% of train set
         eval_json = eval_json[:eval_size]
 
+    random.shuffle(eval_json)
 
     elapsed = timeit.default_timer() - start_time
     rank0_print(f">>>>>LOAD DATA TIME: {elapsed} sec")
