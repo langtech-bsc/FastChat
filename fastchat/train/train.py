@@ -26,10 +26,14 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 import transformers
+from deepspeed import zero
+from deepspeed.runtime.zero.partition_parameters import ZeroParamStatus
 from transformers import Trainer
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+from transformers import Trainer, BitsAndBytesConfig, deepspeed
 from transformers.trainer_pt_utils import LabelSmoother
 import importlib.resources
-import re
+import typing
 import os
 import psutil
 import timeit
@@ -108,6 +112,26 @@ class TrainingArguments(transformers.TrainingArguments):
         },
     )
 
+
+@dataclass
+class LoraArguments:
+    lora:Optional[bool] = field(
+        default=True, 
+        metadata={
+            "help": f"Whether or not to lora"
+        }
+    )
+    lora_r: int = 8
+    lora_alpha: int = 16
+    lora_dropout: float = 0.05
+    lora_target_modules: typing.List[str] = field(
+        default_factory=lambda: ["q_proj", "v_proj"]
+    )
+    lora_weight_path: str = ""
+    lora_bias: str = "none"
+    q_lora: bool = False
+
+
 local_rank = None
 
 
@@ -115,6 +139,40 @@ def rank0_print(*args):
     if local_rank == 0:
         print(*args)
 
+def maybe_zero_3(param):
+    if hasattr(param, "ds_id"):
+        assert param.ds_status == ZeroParamStatus.NOT_AVAILABLE
+        with zero.GatheredParameters([param]):
+            param = param.data.detach().cpu().clone()
+    else:
+        param = param.detach().cpu().clone()
+    return param
+
+
+# Borrowed from peft.utils.get_peft_model_state_dict
+def get_peft_state_maybe_zero_3(named_params, bias):
+    if bias == "none":
+        to_return = {k: t for k, t in named_params if "lora_" in k}
+    elif bias == "all":
+        to_return = {k: t for k, t in named_params if "lora_" in k or "bias" in k}
+    elif bias == "lora_only":
+        to_return = {}
+        maybe_lora_bias = {}
+        lora_bias_names = set()
+        for k, t in named_params:
+            if "lora_" in k:
+                to_return[k] = t
+                bias_name = k.split("lora_")[0] + "bias"
+                lora_bias_names.add(bias_name)
+            elif "bias" in k:
+                maybe_lora_bias[k] = t
+        for k, t in maybe_lora_bias:
+            if bias_name in lora_bias_names:
+                to_return[bias_name] = t
+    else:
+        raise NotImplementedError
+    to_return = {k: maybe_zero_3(v) for k, v in to_return.items()}
+    return to_return
 
 def trainer_save_model_safe(trainer: transformers.Trainer):
     from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
@@ -463,9 +521,15 @@ def train():
     global local_rank
 
     parser = transformers.HfArgumentParser(
-        (ModelArguments, DataArguments, TrainingArguments)
+        (ModelArguments, DataArguments, TrainingArguments, LoraArguments)
     )
-    model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+    model_args, data_args, training_args, lora_args = parser.parse_args_into_dataclasses()
+    
+    print("MODEL ARGS: ", model_args)
+    print("DATA ARGS: ", data_args)
+    print("TRAINING ARGS: ", training_args)
+    print("LORA ARGS: ", lora_args)
+
     local_rank = os.environ.get("SLURM_PROCID", os.environ.get("SLURM_PROCID", None))
     if local_rank is None:
         local_rank = training_args.local_rank
@@ -497,6 +561,26 @@ def train():
         trust_remote_code=model_args.trust_remote_code,
     )
 
+    if lora_args.lora:
+        print("Adding lora config")
+        print("==================")
+        lora_config = LoraConfig(
+            r=lora_args.lora_r,
+            lora_alpha=lora_args.lora_alpha,
+            target_modules=lora_args.lora_target_modules,
+            lora_dropout=lora_args.lora_dropout,
+            bias=lora_args.lora_bias,
+            task_type="CAUSAL_LM",
+        )
+
+        model = get_peft_model(model, lora_config)
+
+    if training_args.deepspeed is not None and training_args.local_rank == 0:
+        model.print_trainable_parameters()
+    
+    if lora_args.lora and training_args.gradient_checkpointing:
+        model.enable_input_require_grads()
+        
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         tokenizer_name_or_path,
         cache_dir=training_args.cache_dir,
@@ -514,7 +598,6 @@ def train():
     if new_special_tokens:
         tokenizer.add_special_tokens({'additional_special_tokens': new_special_tokens}, replace_additional_special_tokens=False)
         tokens_modified = True
-        model.resize_token_embeddings(len(tokenizer))
         
     if tokenizer.eos_token != eos_token:
         tokenizer.eos_token = eos_token
@@ -543,6 +626,9 @@ def train():
     trainer = Trainer(
         model=model, tokenizer=tokenizer, args=training_args, **data_module
     )
+
+    model.config.use_cache = False
+
     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
         trainer.train(resume_from_checkpoint=True)
     else:
@@ -551,10 +637,30 @@ def train():
     # Save model
     model.config.use_cache = True
     trainer.save_state()
-    if trainer.is_deepspeed_enabled:
-        trainer.save_model()
+
+    if lora_args.lora:
+        # check if zero3 mode enabled
+        if deepspeed.is_deepspeed_zero3_enabled():
+            # use deepspeed engine internal function to gather state dict
+            # state_dict_zero3 contains whole parameters of base and lora adapters
+            # we will not extract lora parameters since peft save_pretrained will do that
+            # https://github.com/huggingface/peft/blob/3714aa2fff158fdfa637b2b65952580801d890b2/src/peft/peft_model.py#L125
+            # https://github.com/huggingface/peft/blob/3714aa2fff158fdfa637b2b65952580801d890b2/src/peft/utils/save_and_load.py#L19
+            state_dict_zero3 = trainer.model_wrapped._zero3_consolidated_16bit_state_dict()
+            if training_args.local_rank == 0:
+                state_dict = state_dict_zero3
+        else:
+            # in other mode we use original code from fastchat team, to make sure our change is minimum
+            state_dict = get_peft_state_maybe_zero_3(
+                model.named_parameters(), lora_args.lora_bias
+            )
+        if training_args.local_rank == 0:
+            model.save_pretrained(training_args.output_dir, state_dict=state_dict)
     else:
-        trainer_save_model_safe(trainer)
+        if trainer.is_deepspeed_enabled:
+            trainer.save_model()
+        else:
+            trainer_save_model_safe(trainer)
 
 
 if __name__ == "__main__":

@@ -11,7 +11,6 @@ export WORLD_SIZE=30
 
 
 torchrun $DIST_ARGS -m fastchat.train.train \
-    --deepspeed ds_type3_config_autombs.json \
     --model_name_or_path $HOME/Documents/langtech/FLOR-6.3B \
     --data_paths \
         $HOME/Documents/train_ml.json \
@@ -37,4 +36,5 @@ torchrun $DIST_ARGS -m fastchat.train.train \
     --gradient_checkpointing True \
     --add_chat_template True \
     --lazy_preprocess False \
-    --local_rank 0
+    --local_rank 0 \
+    --lora_target_modules "q_proj" "k_proj" "v_proj" "o_proj"
