@@ -26,11 +26,10 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 import transformers
-from deepspeed import zero
+import deepspeed
 from deepspeed.runtime.zero.partition_parameters import ZeroParamStatus
-from transformers import Trainer
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-from transformers import Trainer, BitsAndBytesConfig, deepspeed
+from transformers import Trainer, BitsAndBytesConfig
 from transformers.trainer_pt_utils import LabelSmoother
 import importlib.resources
 import typing
@@ -116,7 +115,7 @@ class TrainingArguments(transformers.TrainingArguments):
 @dataclass
 class LoraArguments:
     lora:Optional[bool] = field(
-        default=True, 
+        default=False, 
         metadata={
             "help": f"Whether or not to lora"
         }
@@ -142,7 +141,7 @@ def rank0_print(*args):
 def maybe_zero_3(param):
     if hasattr(param, "ds_id"):
         assert param.ds_status == ZeroParamStatus.NOT_AVAILABLE
-        with zero.GatheredParameters([param]):
+        with deepspeed.zero.GatheredParameters([param]):
             param = param.data.detach().cpu().clone()
     else:
         param = param.detach().cpu().clone()
@@ -604,19 +603,23 @@ def train():
         # tokenizer.eos_token_id = tokenizer.convert_tokens_to_ids(eos_token) #It's done internaly automatically
 
     if not tokenizer.unk_token:
+        print("ADDING UNK TOKEN")
         unk_token = "<UNK>"
         tokenizer.unk_token = unk_token
-        tokenizer.add_tokens(list(set([unk_token]) - set(tokenizer.all_special_tokens)))
+        if unk_token not in tokenizer.all_special_tokens:
+            tokenizer.add_tokens([unk_token])
+        
+        tokenizer.unk_token_id = tokenizer.convert_tokens_to_ids(unk_token)
         tokens_modified = True
+    
+    # if not tokenizer.pad_token:
+    #     pad_token = "<PAD>"
+    #     tokenizer.pad_token = pad_token
+    #     tokenizer.add_tokens(list(set([pad_token]) - set(tokenizer.all_special_tokens)))
+    #     tokens_modified = True
 
-    if not tokenizer.pad_token:
-        pad_token = "<PAD>"
-        tokenizer.pad_token = pad_token
-        tokenizer.add_tokens(list(set([pad_token]) - set(tokenizer.all_special_tokens)))
-        tokens_modified = True
-
-    # if tokenizer.pad_token != tokenizer.unk_token:
-    #     tokenizer.pad_token = tokenizer.unk_token
+    if tokenizer.pad_token != tokenizer.unk_token:
+        tokenizer.pad_token = tokenizer.unk_token
 
     if model_args.function_calling:
         conv = get_conv_template("chatml_func_template")
