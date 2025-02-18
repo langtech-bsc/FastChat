@@ -574,8 +574,8 @@ def train():
 
         model = get_peft_model(model, lora_config)
 
-    if training_args.deepspeed is not None and training_args.local_rank == 0:
-        model.print_trainable_parameters()
+    # if training_args.deepspeed is not None and training_args.local_rank == 0:
+    #     model.print_trainable_parameters()
     
     if lora_args.lora and training_args.gradient_checkpointing:
         model.enable_input_require_grads()
@@ -590,8 +590,10 @@ def train():
         add_prefix_space=False
     )
 
+    unk_token = "<unk>"
     eos_token = '<|im_end|>'
-    new_special_tokens = list(set(['<|im_start|>', '<|im_end|>']) - set(tokenizer.all_special_tokens))
+    start_token = '<|im_end|>'
+    new_special_tokens = list(set([start_token, eos_token, unk_token]) - set(tokenizer.all_special_tokens))
 
     tokens_modified = False
     if new_special_tokens:
@@ -604,16 +606,12 @@ def train():
 
     if not tokenizer.unk_token:
         print("ADDING UNK TOKEN")
-        unk_token = "<UNK>"
         tokenizer.unk_token = unk_token
-        if unk_token not in tokenizer.all_special_tokens:
-            tokenizer.add_tokens([unk_token])
-        
         tokenizer.unk_token_id = tokenizer.convert_tokens_to_ids(unk_token)
         tokens_modified = True
     
     # if not tokenizer.pad_token:
-    #     pad_token = "<PAD>"
+    #     pad_token = "<pad>"
     #     tokenizer.pad_token = pad_token
     #     tokenizer.add_tokens(list(set([pad_token]) - set(tokenizer.all_special_tokens)))
     #     tokens_modified = True
