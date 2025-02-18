@@ -603,8 +603,20 @@ def train():
         tokenizer.eos_token = eos_token
         # tokenizer.eos_token_id = tokenizer.convert_tokens_to_ids(eos_token) #It's done internaly automatically
 
-    if tokenizer.pad_token != tokenizer.unk_token:
-        tokenizer.pad_token = tokenizer.unk_token
+    if not tokenizer.unk_token:
+        unk_token = "<UNK>"
+        tokenizer.unk_token = unk_token
+        tokenizer.add_tokens(list(set([unk_token]) - set(tokenizer.all_special_tokens)))
+        tokens_modified = True
+
+    if not tokenizer.pad_token:
+        pad_token = "<PAD>"
+        tokenizer.pad_token = pad_token
+        tokenizer.add_tokens(list(set([pad_token]) - set(tokenizer.all_special_tokens)))
+        tokens_modified = True
+
+    # if tokenizer.pad_token != tokenizer.unk_token:
+    #     tokenizer.pad_token = tokenizer.unk_token
 
     if model_args.function_calling:
         conv = get_conv_template("chatml_func_template")
