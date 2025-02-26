@@ -255,8 +255,9 @@ def preprocess_bsc_chat(
             gemma_tok = type(tokenizer) == transformers.models.gemma.tokenization_gemma.GemmaTokenizer
             gemma_tok_fast = type(tokenizer) == transformers.models.gemma.tokenization_gemma_fast.GemmaTokenizerFast
             llama_tok_fast = type(tokenizer) == transformers.models.llama.tokenization_llama_fast.LlamaTokenizerFast # Mistral tokenizer
-            if gemma_tok or gemma_tok_fast or llama_tok_fast:
-                bos = 1 # Gemma Tokenizer adds bos token
+            has_bos = target[0] in list(tokenizer.all_special_ids) # To debug
+            if gemma_tok or gemma_tok_fast or llama_tok_fast or has_bos:
+                bos = 1 # Model's Tokenizer adds bos token
 
             cur_len = bos
                
