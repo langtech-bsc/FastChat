@@ -97,6 +97,9 @@ class DataArguments:
     eval_data_paths: list[str] = field(
         default=None, metadata={"help": "Path to the evaluation data."}
     )
+    tools_paths: list[str] = field(
+        default=None, metadata={"help": "List of tools to add to normal conversations."}
+    )
     lazy_preprocess: bool = False
 
 
@@ -471,10 +474,20 @@ def make_supervised_data_module(
     )
     rank0_print("Loading data...")
     rank0_print(f"DATA:\n{data_args.data_paths}")
+    rank0_print(f"EVAL:\n{data_args.eval_data_paths}")
     rank0_print('RAM memory % used:', psutil.virtual_memory()[2], '%')
     rank0_print('RAM Used (GB):', psutil.virtual_memory()[3]/1000000000)
 
+    tools = []
+    for tools_path in data_args.tools_paths:
+        data_loaded = json.load(open(tools_path, "r"))
+        tools += data_loaded
 
+    add_tools = False
+    add_tools = len(tools) > 0
+    narray = list(range(0, len(data_loaded)))
+    random.shuffle(narray)
+    
     random.seed(SEED)
     start_time = timeit.default_timer()
     train_json = []
@@ -496,10 +509,25 @@ def make_supervised_data_module(
         eval_json = []
         for eval_data_path in data_args.eval_data_paths: # BSC: To combine different data files
             eval_json += json.load(open(eval_data_path, "r"))
-        eval_size = int(len(train_json) / 10) # limiting size of eval dataset to 10% of train set
+        eval_size = max(500, int(len(train_json) / 10)) # limiting size of eval dataset to 10% of train set
         eval_json = eval_json[:eval_size]
 
     random.shuffle(eval_json)
+    if add_tools:
+        print("ADDING tools to train data")
+        j = 0
+        for i, row in enumerate(train_json):
+            if i%3 == 0 and not row.get("tools"):
+                row["tools"] = tools[narray[j]]
+                j = (j + 1) % len(narray)
+
+    if add_tools:
+        print("ADDING tools to eval data")
+        j = 0
+        for i, row in enumerate(eval_json):
+            if i%3 == 0 and not row.get("tools"):
+                row["tools"] = tools[narray[j]]
+                j = (j + 1) % len(narray)
 
     elapsed = timeit.default_timer() - start_time
     rank0_print(f">>>>>LOAD DATA TIME: {elapsed} sec")

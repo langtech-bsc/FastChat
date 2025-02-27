@@ -13,7 +13,7 @@ export WORLD_SIZE=30
 torchrun $DIST_ARGS -m fastchat.train.train \
     --model_name_or_path meta-llama/Llama-3.1-8B-Instruct \
     --data_paths \
-        $HOME/Documents/train_ml.json \
+        $HOME/Documents/data.json \
     --eval_data_paths \
         $HOME/Documents/train_ml.json \
     --bf16 True \
@@ -32,9 +32,10 @@ torchrun $DIST_ARGS -m fastchat.train.train \
     --warmup_ratio 0.03 \
     --lr_scheduler_type "cosine" \
     --logging_steps 1 \
-    --model_max_length 4096 \
+    --model_max_length 8196 \
     --gradient_checkpointing True \
     --add_chat_template True \
     --lazy_preprocess False \
     --local_rank 0 \
-    --lora_target_modules "q_proj" "k_proj" "v_proj" "o_proj"
+    --function_calling True \
+    --tools_paths $HOME/Documents/langtech/Function-Calling/tools.json

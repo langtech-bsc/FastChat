@@ -2228,7 +2228,7 @@ register_conv_template(
 {%- endif -%}
 
 {%- if tools  -%}
-  {{- "You are a function-calling AI model. You are provided with function signatures within <tools> </tools> XML tags. You may call one or more functions to assist with the user query. Don't make assumptions about what values to plug into functions.\n" }}
+  {{- "You have function-calling capabilities. You are provided with function signatures within <tools> </tools> XML tags. You may call one or more functions to assist with the user query. Don't make assumptions about what values to plug into functions.\n" }}
   {{- "<tools>\n" }}
   {{- tools }}
   {{- "\n</tools>\n" }}
