@@ -223,7 +223,7 @@ def preprocess_bsc_chat(
                 else:
                     old_role = roles[source[j-1]["from"]]
                     if old_role == roles["human"]: # After user must be assistant
-                        assert role == roles["gpt"], f"{i}, \nErroneous source: {source}"
+                        assert role == roles["gpt"], f"{i}, \nErroneous source: {json.dumps(source, indent=4)}"
                     elif old_role == roles["gpt"]: # After assistant, must be user or tool role
                         assert role in [roles["human"], roles["tool"]] and role != None, f"{i}, \nErroneous source: {source}"
                     else: # If previous role was tool, next must be assistant or tool
