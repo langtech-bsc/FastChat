@@ -229,7 +229,7 @@ def preprocess_bsc_chat(
                     else: # If previous role was tool, next must be assistant or tool
                         assert role in [roles["gpt"], roles["tool"]] and role != None, f"{i}, \nErroneous source: {source}"
 
-                if sentence.get("tool_calls") is not None and len(sentence["tool_calls"] > 0):
+                if sentence.get("tool_calls") is not None and len(sentence["tool_calls"]) > 0:
                     conv.append_message(role, sentence["tool_calls"])
                 else:
                     conv.append_message(role, sentence["value"])
