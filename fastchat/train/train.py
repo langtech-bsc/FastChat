@@ -273,11 +273,11 @@ def preprocess_bsc_chat(
             
             cur_len += len(tokenizer.tokenize(assistant_starts[0]))
             target[:cur_len] = IGNORE_TOKEN_ID
-            for assistant_start in assistant_starts[1:]:
-                end_index = assistant_start.find(end) + len(end)
-                cur_len += len(tokenizer.tokenize(assistant_start[:end_index]))
+            for assistant_start_tmp in assistant_starts[1:]:
+                end_index = assistant_start_tmp.find(end) + len(end)
+                cur_len += len(tokenizer.tokenize(assistant_start_tmp[:end_index]))
 
-                to_ignore = len(tokenizer.tokenize(assistant_start[end_index:]))
+                to_ignore = len(tokenizer.tokenize(assistant_start_tmp[end_index:]))
                 target[cur_len: cur_len + to_ignore] = IGNORE_TOKEN_ID
                 cur_len += to_ignore
 
@@ -482,7 +482,7 @@ def make_supervised_data_module(
     rank0_print('RAM Used (GB):', psutil.virtual_memory()[3]/1000000000)
 
     tools = []
-    for tools_path in data_args.tools_paths:
+    for tools_path in data_args.tools_paths if data_args.tools_paths else []:
         data_loaded = json.load(open(tools_path, "r"))
         tools += data_loaded
 
@@ -520,7 +520,7 @@ def make_supervised_data_module(
         print("ADDING tools to train data")
         j = 0
         for i, row in enumerate(train_json):
-            if i%3 == 0 and not row.get("tools"):
+            if i%10 == 0 and not row.get("tools"):
                 row["tools"] = tools[narray[j]]
                 j = (j + 1) % len(narray)
 
