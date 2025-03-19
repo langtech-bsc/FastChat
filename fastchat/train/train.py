@@ -528,7 +528,7 @@ def make_supervised_data_module(
         print("ADDING tools to eval data")
         j = 0
         for i, row in enumerate(eval_json):
-            if i%3 == 0 and not row.get("tools"):
+            if i%10 == 0 and not row.get("tools"):
                 row["tools"] = tools[narray[j]]
                 j = (j + 1) % len(narray)
 

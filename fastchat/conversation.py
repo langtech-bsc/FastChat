@@ -157,8 +157,11 @@ class Conversation:
                     chat.append({"role": role, "content": "", "tool_calls": tool_calls})
                 else:
                     chat.append({"role": role, "content": message})
-
-            return tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=False, tool_prompt=metadata.get("tool_prompt", None), tools=metadata.get("tools", None))
+            try:
+                return tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=False, tool_prompt=metadata.get("tool_prompt", None), tools=metadata.get("tools", None))
+            except Exception as err:
+                print(chat)
+                raise err
 
         # BSC: get prompt with tokenizer.
         if self.sep_style == SeparatorStyle.CHATML_TEMPLATE:
