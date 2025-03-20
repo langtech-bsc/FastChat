@@ -488,7 +488,7 @@ def make_supervised_data_module(
 
     add_tools = False
     add_tools = len(tools) > 0
-    narray = list(range(0, len(data_loaded)))
+    narray = list(range(0, len(tools)))
     random.shuffle(narray)
     
     random.seed(SEED)
