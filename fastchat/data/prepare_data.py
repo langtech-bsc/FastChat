@@ -176,7 +176,7 @@ if __name__=="__main__":
     parser.add_argument("--output-path", type=str, required=True, help="Path where the output file will be saved, containing the desired file name.")
     parser.add_argument("--lang", type=str, required=True, help="ISO language code of the language of the dataset (set to 'mm' for multilingual datasets)")
     parser.add_argument("--lang-field", type=str, required=False, default="lang", help="Lang field from source data. Default: 'lang'")
-    parser.add_argument("--humman", type=str, required=False, default="'{istruction}'",help="Humman field that can combine multiple fields. Default: '{instruction}'. E.g, '{prompt}\\n\\nContext:\\n{context}\\n\\nQuestion:\\n{instruction}'")
+    parser.add_argument("--humman", type=str, required=False, default="'{instruction}'",help="Humman field that can combine multiple fields. Default: '{instruction}'. E.g, '{prompt}\\n\\nContext:\\n{context}\\n\\nQuestion:\\n{instruction}'")
     parser.add_argument("--assistent", type=str, required=False, default="response",help="Lang field from source data. Default: 'response'")
     parser.add_argument("--check-mode", type=str, default="err", required=False, help="Mode used when checking prepared data. Options: 'err', 'drop', 'warn'")
     
