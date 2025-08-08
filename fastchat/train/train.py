@@ -26,7 +26,8 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 import transformers
-import deepspeed
+#import deepspeed
+from transformers.integrations import deepspeed
 from deepspeed.runtime.zero.partition_parameters import ZeroParamStatus
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from transformers import Trainer, BitsAndBytesConfig
