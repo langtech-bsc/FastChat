@@ -26,8 +26,8 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 import transformers
-#import deepspeed
-from transformers.integrations import deepspeed
+import deepspeed
+from transformers.deepspeed import is_deepspeed_zero3_enabled
 from deepspeed.runtime.zero.partition_parameters import ZeroParamStatus
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from transformers import Trainer, BitsAndBytesConfig
@@ -686,7 +686,7 @@ def train():
 
     if lora_args.lora:
         # check if zero3 mode enabled
-        if deepspeed.is_deepspeed_zero3_enabled():
+        if is_deepspeed_zero3_enabled():
             # use deepspeed engine internal function to gather state dict
             # state_dict_zero3 contains whole parameters of base and lora adapters
             # we will not extract lora parameters since peft save_pretrained will do that
