@@ -701,8 +701,30 @@ def train():
                 model.named_parameters(), lora_args.lora_bias
             )
         if training_args.local_rank == 0:
+            # If vocab changed, make adapter vLLM-friendly by stripping forbidden layers
+            if tokens_modified:
+                if hasattr(model, "modules_to_save"):
+                    model.modules_to_save = [
+                        m for m in model.modules_to_save
+                        if m not in ("lm_head", "embed_tokens")
+                    ]
+                state_dict = {
+                    k: v for k, v in state_dict.items()
+                    if "lm_head" not in k and "embed_tokens" not in k
+                }
+    
+            # Always save LoRA adapter + tokenizer
             model.save_pretrained(training_args.output_dir, state_dict=state_dict)
             tokenizer.save_pretrained(training_args.output_dir)
+    
+            # Save full base model (with resized vocab) only when vocab changed
+            if tokens_modified:
+                base_dir = os.path.join(training_args.output_dir, "base")
+                os.makedirs(base_dir, exist_ok=True)
+                trainer.model.base_model.model.save_pretrained(
+                    base_dir, safe_serialization=True
+                )
+                tokenizer.save_pretrained(base_dir)
     else:
         if trainer.is_deepspeed_enabled:
             trainer.save_model()
