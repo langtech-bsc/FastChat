@@ -703,11 +703,26 @@ def train():
         if training_args.local_rank == 0:
             # If vocab changed, make adapter vLLM-friendly by stripping forbidden layers
             if tokens_modified:
-                if hasattr(model, "modules_to_save"):
-                    model.modules_to_save = [
-                        m for m in model.modules_to_save
-                        if m not in ("lm_head", "embed_tokens")
-                    ]
+                # 1) Make adapter vLLM-friendly: handle None/list/set/tuple/dict/ModuleDict
+                mods = getattr(model, "modules_to_save", None)
+                if mods is not None:
+                    # dict / ModuleDict path (PEFT newer versions)
+                    if hasattr(mods, "keys"):
+                        for k in list(mods.keys()):
+                            if k in ("lm_head", "embed_tokens"):
+                                del mods[k]
+                    else:
+                        # iterable (list/set/tuple) path
+                        try:
+                            model.modules_to_save = [
+                                m for m in list(mods)
+                                if m not in ("lm_head", "embed_tokens")
+                            ]
+                        except TypeError:
+                            # Not iterable; ignore
+                            pass
+            
+                # 2) Also filter out any residual tensors in the state dict
                 state_dict = {
                     k: v for k, v in state_dict.items()
                     if "lm_head" not in k and "embed_tokens" not in k
