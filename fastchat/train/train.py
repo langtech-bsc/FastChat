@@ -700,7 +700,7 @@ def train():
             state_dict = get_peft_state_maybe_zero_3(
                 model.named_parameters(), lora_args.lora_bias
             )
-         if training_args.local_rank == 0:
+        if training_args.local_rank == 0:
             # Decide if we also save a full base model
             must_save_base = True #_adapter_needs_base_save(model, state_dict, tokens_modified)
     
