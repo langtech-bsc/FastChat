@@ -695,44 +695,18 @@ def train():
             )
     
         if training_args.local_rank == 0:
-            # Save base only if tokenizer/vocab was changed in this run
-            must_save_base = True
-        
-            # If vocab changed, make adapter vLLM-friendly (no lm_head/embed_tokens)
-            if must_save_base:
-                mods = getattr(model, "modules_to_save", None)
-                if mods is not None:
-                    if hasattr(mods, "keys"):  # dict/ModuleDict case
-                        for k in list(mods.keys()):
-                            if k in ("lm_head", "embed_tokens"):
-                                del mods[k]
-                    else:  # list/tuple/set case
-                        try:
-                            model.modules_to_save = [
-                                m for m in list(mods)
-                                if m not in ("lm_head", "embed_tokens")
-                            ]
-                        except TypeError:
-                            pass
-                if state_dict is not None and hasattr(state_dict, "items"):
-                    state_dict = {
-                        k: v for k, v in state_dict.items()
-                        if "lm_head" not in k and "embed_tokens" not in k
-                    }
-        
+            # Save base only if tokenizer/vocab was changed
+            must_save_base = tokens_modified  # or your own condition
+    
             # 2) Save adapter (always) + tokenizer
             model.save_pretrained(training_args.output_dir, state_dict=state_dict)
             tokenizer.save_pretrained(training_args.output_dir)
-        
+    
             # 3) Save full *base* (no LoRA merge) ONLY when vocab changed
             if must_save_base:
                 base_dir = os.path.join(training_args.output_dir, "base")
                 os.makedirs(base_dir, exist_ok=True)
-        
-                # Materialize full tensors on rank 0 under ZeRO-3 before taking base.state_dict()
-                if is_deepspeed_zero3_enabled():
-                    _missing, _unexpected = model.load_state_dict(state_dict, strict=False)
-        
+                
                 base_module = trainer.model.base_model.model  # raw HF model
                 base_sd = base_module.state_dict()            # includes resized embed/lm_head
                 base_module.save_pretrained(
