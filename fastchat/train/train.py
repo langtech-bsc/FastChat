@@ -593,26 +593,6 @@ def train():
         trust_remote_code=model_args.trust_remote_code,
     )
 
-    if lora_args.lora:
-        print("Adding lora config")
-        print("==================")
-        lora_config = LoraConfig(
-            r=lora_args.lora_r,
-            lora_alpha=lora_args.lora_alpha,
-            target_modules=lora_args.lora_target_modules,
-            lora_dropout=lora_args.lora_dropout,
-            bias=lora_args.lora_bias,
-            task_type="CAUSAL_LM",
-        )
-
-        model = get_peft_model(model, lora_config)
-
-    # if training_args.deepspeed is not None and training_args.local_rank == 0:
-    #     model.print_trainable_parameters()
-    
-    if lora_args.lora and training_args.gradient_checkpointing:
-        model.enable_input_require_grads()
-        
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         tokenizer_name_or_path,
         cache_dir=training_args.cache_dir,
@@ -622,7 +602,10 @@ def train():
         trust_remote_code=model_args.trust_remote_code,
         add_prefix_space=False
     )
-
+    
+    # if training_args.deepspeed is not None and training_args.local_rank == 0:
+    #     model.print_trainable_parameters()
+    
     unk_token = "<unk>"
     eos_token = '<|im_end|>'
     start_token = '<|im_end|>'
@@ -663,6 +646,23 @@ def train():
         model.resize_token_embeddings(len(tokenizer))
         model.config.vocab_size = len(tokenizer)
 
+    if lora_args.lora:
+        print("Adding lora config")
+        print("==================")
+        lora_config = LoraConfig(
+            r=lora_args.lora_r,
+            lora_alpha=lora_args.lora_alpha,
+            target_modules=lora_args.lora_target_modules,
+            lora_dropout=lora_args.lora_dropout,
+            bias=lora_args.lora_bias,
+            task_type="CAUSAL_LM",
+        )
+
+        model = get_peft_model(model, lora_config)
+        
+    if lora_args.lora and training_args.gradient_checkpointing:
+        model.enable_input_require_grads()
+         
     if model_args.add_chat_template: # BSC: for using chat template
         tokenizer.chat_template = conv.chat_template
     # Load data
