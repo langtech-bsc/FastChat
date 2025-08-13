@@ -700,7 +700,7 @@ def train():
             state_dict = get_peft_state_maybe_zero_3(
                 model.named_parameters(), lora_args.lora_bias
             )
-        if tokens_modified and training_args.local_rank == 0:
+        if training_args.local_rank == 0:
             # Merge LoRA deltas + resized vocab into the base, then save full weights
             merged = model.merge_and_unload()
             base_dir = os.path.join(training_args.output_dir, "base")
