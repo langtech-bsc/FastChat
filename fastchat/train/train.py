@@ -661,7 +661,7 @@ def train():
 
     if tokens_modified:
         model.resize_token_embeddings(len(tokenizer))
-
+        model.config.vocab_size = len(tokenizer)
 
     if model_args.add_chat_template: # BSC: for using chat template
         tokenizer.chat_template = conv.chat_template
