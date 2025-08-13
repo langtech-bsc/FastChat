@@ -716,18 +716,20 @@ def train():
                 if is_deepspeed_zero3_enabled():
                     # Filter consolidated SD down to the plain base weights (no LoRA tensors)
                     full_sd = state_dict  # already consolidated above
-                    base_sd = {}
-                    for k, v in full_sd.items():
-                        # unwrap "base_model.model." prefix if present
-                        if k.startswith("base_model.model."):
-                            kk = k.split("base_model.model.", 1)[1]
-                        else:
-                            kk = k
-                        # skip LoRA tensors
-                        if "lora_" in kk or ".lora_" in kk:
-                            continue
-                        base_sd[kk] = v
-    
+                    base_sd = None
+                    if full_sd:
+                        base_sd = {}
+                        for k, v in full_sd.items():
+                            # unwrap "base_model.model." prefix if present
+                            if k.startswith("base_model.model."):
+                                kk = k.split("base_model.model.", 1)[1]
+                            else:
+                                kk = k
+                            # skip LoRA tensors
+                            if "lora_" in kk or ".lora_" in kk:
+                                continue
+                            base_sd[kk] = v
+                    
                     trainer.model.base_model.model.save_pretrained(
                         base_dir, state_dict=base_sd, safe_serialization=True
                     )
