@@ -723,10 +723,12 @@ def train():
                             pass
             
                 # 2) Also filter out any residual tensors in the state dict
-                state_dict = {
-                    k: v for k, v in state_dict.items()
-                    if "lm_head" not in k and "embed_tokens" not in k
-                }
+                if state_dict is not None and hasattr(state_dict, "items"):
+                    state_dict = {
+                        k: v for k, v in state_dict.items()
+                        if "lm_head" not in k and "embed_tokens" not in k
+                    }
+         
     
             # Always save LoRA adapter + tokenizer
             model.save_pretrained(training_args.output_dir, state_dict=state_dict)
