@@ -700,13 +700,43 @@ def train():
             state_dict = get_peft_state_maybe_zero_3(
                 model.named_parameters(), lora_args.lora_bias
             )
-        if training_args.local_rank == 0:
-            # Merge LoRA deltas + resized vocab into the base, then save full weights
-            merged = model.merge_and_unload()
-            base_dir = os.path.join(training_args.output_dir, "base")
-            os.makedirs(base_dir, exist_ok=True)
-            merged.save_pretrained(base_dir, safe_serialization=True)
-            tokenizer.save_pretrained(base_dir)
+         if training_args.local_rank == 0:
+            # Decide if we also save a full base model
+            must_save_base = True #_adapter_needs_base_save(model, state_dict, tokens_modified)
+    
+            # --- Save adapter (always) ---
+            model.save_pretrained(training_args.output_dir, state_dict=state_dict)
+            tokenizer.save_pretrained(training_args.output_dir)
+    
+            # --- Save base model ONLY when needed ---
+            if must_save_base:
+                base_dir = os.path.join(training_args.output_dir, "base")
+                os.makedirs(base_dir, exist_ok=True)
+    
+                if is_deepspeed_zero3_enabled():
+                    # Filter consolidated SD down to the plain base weights (no LoRA tensors)
+                    full_sd = state_dict  # already consolidated above
+                    base_sd = {}
+                    for k, v in full_sd.items():
+                        # unwrap "base_model.model." prefix if present
+                        if k.startswith("base_model.model."):
+                            kk = k.split("base_model.model.", 1)[1]
+                        else:
+                            kk = k
+                        # skip LoRA tensors
+                        if "lora_" in kk or ".lora_" in kk:
+                            continue
+                        base_sd[kk] = v
+    
+                    trainer.model.base_model.model.save_pretrained(
+                        base_dir, state_dict=base_sd, safe_serialization=True
+                    )
+                else:
+                    trainer.model.base_model.model.save_pretrained(
+                        base_dir, safe_serialization=True
+                    )
+    
+                tokenizer.save_pretrained(base_dir)
     else:
         if trainer.is_deepspeed_enabled:
             trainer.save_model()
