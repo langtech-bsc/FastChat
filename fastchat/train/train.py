@@ -700,48 +700,13 @@ def train():
             state_dict = get_peft_state_maybe_zero_3(
                 model.named_parameters(), lora_args.lora_bias
             )
-        if training_args.local_rank == 0:
-            # If vocab changed, make adapter vLLM-friendly by stripping forbidden layers
-            if tokens_modified:
-                # 1) Make adapter vLLM-friendly: handle None/list/set/tuple/dict/ModuleDict
-                mods = getattr(model, "modules_to_save", None)
-                if mods is not None:
-                    # dict / ModuleDict path (PEFT newer versions)
-                    if hasattr(mods, "keys"):
-                        for k in list(mods.keys()):
-                            if k in ("lm_head", "embed_tokens"):
-                                del mods[k]
-                    else:
-                        # iterable (list/set/tuple) path
-                        try:
-                            model.modules_to_save = [
-                                m for m in list(mods)
-                                if m not in ("lm_head", "embed_tokens")
-                            ]
-                        except TypeError:
-                            # Not iterable; ignore
-                            pass
-            
-                # 2) Also filter out any residual tensors in the state dict
-                if state_dict is not None and hasattr(state_dict, "items"):
-                    state_dict = {
-                        k: v for k, v in state_dict.items()
-                        if "lm_head" not in k and "embed_tokens" not in k
-                    }
-         
-    
-            # Always save LoRA adapter + tokenizer
-            model.save_pretrained(training_args.output_dir, state_dict=state_dict)
-            tokenizer.save_pretrained(training_args.output_dir)
-    
-            # Save full base model (with resized vocab) only when vocab changed
-            if tokens_modified:
-                base_dir = os.path.join(training_args.output_dir, "base")
-                os.makedirs(base_dir, exist_ok=True)
-                trainer.model.base_model.model.save_pretrained(
-                    base_dir, safe_serialization=True
-                )
-                tokenizer.save_pretrained(base_dir)
+        if tokens_modified and training_args.local_rank == 0:
+            # Merge LoRA deltas + resized vocab into the base, then save full weights
+            merged = model.merge_and_unload()
+            base_dir = os.path.join(training_args.output_dir, "base")
+            os.makedirs(base_dir, exist_ok=True)
+            merged.save_pretrained(base_dir, safe_serialization=True)
+            tokenizer.save_pretrained(base_dir)
     else:
         if trainer.is_deepspeed_enabled:
             trainer.save_model()
