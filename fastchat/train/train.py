@@ -26,8 +26,8 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 import transformers
-#import deepspeed
-from transformers.integrations import deepspeed
+import deepspeed
+# from transformers.deepspeed import is_deepspeed_zero3_enabled
 from deepspeed.runtime.zero.partition_parameters import ZeroParamStatus
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from transformers import Trainer, BitsAndBytesConfig
@@ -507,7 +507,7 @@ def make_supervised_data_module(
         train_json += data_loaded
     
     random.shuffle(train_json)
-    # train_json = train_json[:1000] # TODO: DELETE AFTER TESTS!!
+    train_json = train_json[:500] # TODO: DELETE AFTER TESTS!!
 
     if data_args.eval_data_paths:
         eval_json = []
@@ -556,11 +556,8 @@ def train():
         (ModelArguments, DataArguments, TrainingArguments, LoraArguments)
     )
     model_args, data_args, training_args, lora_args = parser.parse_args_into_dataclasses()
+
     
-    print("MODEL ARGS: ", model_args)
-    print("DATA ARGS: ", data_args)
-    print("TRAINING ARGS: ", training_args)
-    print("LORA ARGS: ", lora_args)
 
     local_rank = os.environ.get("SLURM_PROCID", os.environ.get("SLURM_PROCID", None))
     if local_rank is None:
@@ -568,7 +565,12 @@ def train():
     
     local_rank = int(local_rank)
 
-    # BSC: get tokenizer path if different
+    rank0_print("MODEL ARGS: ", model_args)
+    rank0_print("DATA ARGS: ", data_args)
+    rank0_print("TRAINING ARGS: ", training_args)
+    rank0_print("LORA ARGS: ", lora_args)
+    
+    # tokenizer path override (if provided)
     tokenizer_name_or_path = model_args.model_name_or_path
     if model_args.tokenizer_name_or_path:
         tokenizer_name_or_path = model_args.tokenizer_name_or_path
@@ -620,7 +622,7 @@ def train():
         padding_side=model_args.padding_side,
         use_fast=True,
         trust_remote_code=model_args.trust_remote_code,
-        add_prefix_space=False
+        add_prefix_space=False,
     )
 
     unk_token = "<unk>"
@@ -634,7 +636,7 @@ def train():
         tokens_modified = True
         
     if tokenizer.eos_token != eos_token:
-        tokenizer.eos_token = eos_token
+        tokenizer.eos_token = eos_token # eos_token_id is set internaly.
         # tokenizer.eos_token_id = tokenizer.convert_tokens_to_ids(eos_token) #It's done internaly automatically
 
     if not tokenizer.unk_token:
@@ -654,7 +656,14 @@ def train():
 
     if model_args.function_calling:
         conv = get_conv_template("chatml_func_template")
-        tokenizer.add_tokens(list(set(["<tool_call>", "</tool_call>", "<tools>" ,"</tools>", "<tool_response>", "</tool_response>"]) - set(tokenizer.all_special_tokens)))
+        tokenizer.add_tokens(
+            list(
+                set(
+                    ["<tool_call>", "</tool_call>", "<tools>", "</tools>", "<tool_response>", "</tool_response>"]
+                )
+                - set(tokenizer.all_special_tokens)
+            )
+        )
         tokens_modified = True
     else:
         conv = get_conv_template("chatml_template")
@@ -702,6 +711,7 @@ def train():
             )
         if training_args.local_rank == 0:
             model.save_pretrained(training_args.output_dir, state_dict=state_dict)
+            tokenizer.save_pretrained(training_args.output_dir)
     else:
         if trainer.is_deepspeed_enabled:
             trainer.save_model()
