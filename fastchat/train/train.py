@@ -17,17 +17,17 @@
 from dataclasses import dataclass, field
 import json
 import math
-import pathlib
+import os, pathlib, gc, sys
 from typing import Dict, Optional, Sequence
 from enum import auto, IntEnum
 import random
-
 import numpy as np
 import torch
+import torch.distributed as dist
 from torch.utils.data import Dataset
 import transformers
 import deepspeed
-# from transformers.deepspeed import is_deepspeed_zero3_enabled
+from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 from deepspeed.runtime.zero.partition_parameters import ZeroParamStatus
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from transformers import Trainer, BitsAndBytesConfig
@@ -78,6 +78,13 @@ class ModelArguments:
         default=True, 
         metadata={
             "help": f"Whether or not to add and train the model with the chat template"
+        }
+    )
+
+    update_model: Optional[bool] = field(
+        default=False, 
+        metadata={
+            "help": f"This will save model with if vocab size is modified."
         }
     )
 
@@ -507,7 +514,7 @@ def make_supervised_data_module(
         train_json += data_loaded
     
     random.shuffle(train_json)
-    train_json = train_json[:500] # TODO: DELETE AFTER TESTS!!
+    # train_json = train_json[:500] # TODO: DELETE AFTER TESTS!!
 
     if data_args.eval_data_paths:
         eval_json = []
@@ -548,73 +555,12 @@ def make_supervised_data_module(
 
     return dict(train_dataset=train_dataset, eval_dataset=eval_dataset)
 
+def get_tokenizer(model_args):
 
-def train():
-    global local_rank
-
-    parser = transformers.HfArgumentParser(
-        (ModelArguments, DataArguments, TrainingArguments, LoraArguments)
-    )
-    model_args, data_args, training_args, lora_args = parser.parse_args_into_dataclasses()
-
-    
-
-    local_rank = os.environ.get("SLURM_PROCID", os.environ.get("SLURM_PROCID", None))
-    if local_rank is None:
-        local_rank = training_args.local_rank
-    
-    local_rank = int(local_rank)
-
-    rank0_print("MODEL ARGS: ", model_args)
-    rank0_print("DATA ARGS: ", data_args)
-    rank0_print("TRAINING ARGS: ", training_args)
-    rank0_print("LORA ARGS: ", lora_args)
-    
-    # tokenizer path override (if provided)
     tokenizer_name_or_path = model_args.model_name_or_path
     if model_args.tokenizer_name_or_path:
         tokenizer_name_or_path = model_args.tokenizer_name_or_path
 
-
-    # Set RoPE scaling factor
-    config = transformers.AutoConfig.from_pretrained(
-        model_args.model_name_or_path,
-        cache_dir=training_args.cache_dir,
-        trust_remote_code=model_args.trust_remote_code,
-    )
-    orig_ctx_len = getattr(config, "max_position_embeddings", None)
-    if orig_ctx_len and training_args.model_max_length > orig_ctx_len:
-        scaling_factor = float(math.ceil(training_args.model_max_length / orig_ctx_len))
-        config.rope_scaling = {"type": "linear", "factor": scaling_factor}
-    config.use_cache = False
-    # Load model and tokenizer
-    model = transformers.AutoModelForCausalLM.from_pretrained(
-        model_args.model_name_or_path,
-        config=config,
-        cache_dir=training_args.cache_dir,
-        trust_remote_code=model_args.trust_remote_code,
-    )
-
-    if lora_args.lora:
-        print("Adding lora config")
-        print("==================")
-        lora_config = LoraConfig(
-            r=lora_args.lora_r,
-            lora_alpha=lora_args.lora_alpha,
-            target_modules=lora_args.lora_target_modules,
-            lora_dropout=lora_args.lora_dropout,
-            bias=lora_args.lora_bias,
-            task_type="CAUSAL_LM",
-        )
-
-        model = get_peft_model(model, lora_config)
-
-    # if training_args.deepspeed is not None and training_args.local_rank == 0:
-    #     model.print_trainable_parameters()
-    
-    if lora_args.lora and training_args.gradient_checkpointing:
-        model.enable_input_require_grads()
-        
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         tokenizer_name_or_path,
         cache_dir=training_args.cache_dir,
@@ -625,10 +571,12 @@ def train():
         add_prefix_space=False,
     )
 
+
     unk_token = "<unk>"
     eos_token = '<|im_end|>'
     start_token = '<|im_end|>'
     new_special_tokens = list(set([start_token, eos_token, unk_token]) - set(tokenizer.all_special_tokens))
+
 
     tokens_modified = False
     if new_special_tokens:
@@ -668,13 +616,168 @@ def train():
     else:
         conv = get_conv_template("chatml_template")
 
+    if model_args.add_chat_template: # BSC: for using chat template
+        tokenizer.chat_template = conv.chat_template
+
+    return tokenizer, tokens_modified, conv
+
+
+def get_model_dtype(model):
+    for p in model.parameters():
+        return p.dtype
+    return torch.float32  # fallba
+
+def update_model(model_args, training_args):
+    # 1) Kill any existing process group (if you launched inside a SLURM/MPI job).
+    if dist.is_available() and dist.is_initialized():
+        dist.destroy_process_group()
+
+    # 2) Scrub env so Accelerate/DS doesn't engage in this single-process path.
+    for k in ("ACCELERATE_USE_DEEPSPEED", "DEEPSPEED_CONFIG_FILE", "DEEPSPEED_ZERO_STAGE"):
+        os.environ.pop(k, None)
+    for k in list(os.environ):
+        if k.startswith(("OMPI_", "PMI_", "PMIX_", "MPI_")):
+            os.environ.pop(k, None)
+
+    os.environ["ACCELERATE_DISABLE_WEIGHTS_INIT"] = "1"  # avoid accelerate zero-init
+    os.environ["CUDA_VISIBLE_DEVICES"] = os.environ.get("CUDA_VISIBLE_DEVICES", "0")
+
+    # If you want to be extra-safe, also ensure this temp path doesn't use DS config:
+    try:
+        training_args.deepspeed = None
+    except Exception:
+        pass
+
+    # ---- now do your tokenizer/config/model load ----
+    tokenizer, tokens_modified, conv = get_tokenizer(model_args=model_args)
+    if not tokens_modified:
+        return str(model_args.model_name_or_path)
+    
+    config = transformers.AutoConfig.from_pretrained(
+        model_args.model_name_or_path,
+        cache_dir=training_args.cache_dir,
+        trust_remote_code=model_args.trust_remote_code,
+    )
+    config.use_cache = False
+
+    model = transformers.AutoModelForCausalLM.from_pretrained(
+        model_args.model_name_or_path,
+        config=config,
+        cache_dir=training_args.cache_dir,
+        trust_remote_code=model_args.trust_remote_code,
+        low_cpu_mem_usage=False,   # force a plain (non-accelerate) load
+        device_map=None,           # don't shard
+    )
+    # --- 4) Apply tokenizer changes to weights + config ---
     if tokens_modified:
         model.resize_token_embeddings(len(tokenizer))
 
+    model.config.vocab_size = len(tokenizer)
+    if tokenizer.pad_token_id is not None:
+        model.config.pad_token_id = tokenizer.pad_token_id
+    if tokenizer.eos_token_id is not None:
+        model.config.eos_token_id = tokenizer.eos_token_id
+    if tokenizer.bos_token_id is not None:
+        model.config.bos_token_id = tokenizer.bos_token_id
+    if hasattr(model, "tie_weights"):
+        try:
+            model.tie_weights()
+        except Exception:
+            pass
 
-    if model_args.add_chat_template: # BSC: for using chat template
-        tokenizer.chat_template = conv.chat_template
+    # --- 5) Save to output_dir/base-model with strict dir policy ---
+    out_dir = pathlib.Path(training_args.output_dir)
+    base_dir = out_dir
+    if base_dir.exists() and any(base_dir.iterdir()):
+        raise FileExistsError(f"Base model directory already exists and is not empty: {base_dir}")
+    base_dir.mkdir(parents=True, exist_ok=True)
+
+    # Consolidate to CPU to guarantee a full checkpoint
+    # with torch.no_grad():
+    #     state_dict_cpu = {k: v.detach().cpu() for k, v in model.state_dict().items()}
+
+    if getattr(training_args, "bf16", False):
+        model.to(torch.bfloat16)
+        save_dtype = torch.bfloat16
+    elif getattr(training_args, "fp16", False):
+        model.half()
+        save_dtype = torch.float16
+    else:
+        save_dtype = torch.float32  # fallback
+
+    model.save_pretrained(
+        base_dir,
+        safe_serialization=True,
+        max_shard_size="5GB",
+        torch_dtype=save_dtype
+    )
+    tokenizer.save_pretrained(base_dir)
+
+    # --- 6) Cleanup ---
+    try:
+        del model
+        gc.collect()
+        torch.cuda.empty_cache()
+    except Exception:
+        pass
+
+    return str(base_dir)
+
+
+def train(model_args, data_args, training_args, lora_args):
+    # tokenizer path override (if provided)
+    tokenizer, tokens_modified, conv = get_tokenizer(model_args=model_args)
+
+    # Set RoPE scaling factor
+    config = transformers.AutoConfig.from_pretrained(
+        model_args.model_name_or_path,
+        cache_dir=training_args.cache_dir,
+        trust_remote_code=model_args.trust_remote_code,
+    )
+    orig_ctx_len = getattr(config, "max_position_embeddings", None)
+    if orig_ctx_len and training_args.model_max_length > orig_ctx_len:
+        scaling_factor = float(math.ceil(training_args.model_max_length / orig_ctx_len))
+        config.rope_scaling = {"type": "linear", "factor": scaling_factor}
+    config.use_cache = False
+    
+    # Load model
+    model = transformers.AutoModelForCausalLM.from_pretrained(
+        model_args.model_name_or_path,
+        config=config,
+        cache_dir=training_args.cache_dir,
+        trust_remote_code=model_args.trust_remote_code,
+    )
+
+
+    if tokens_modified:
+        rank0_print("Tokens modified; resizing embeddings for base model")
+        model.resize_token_embeddings(len(tokenizer))
+
+    # if training_args.deepspeed is not None and training_args.local_rank == 0:
+    #     model.print_trainable_parameters()
+    
+    if lora_args.lora and training_args.gradient_checkpointing:
+        model.enable_input_require_grads()
+    
+    # if tokens_modified:
+    #     model.resize_token_embeddings(len(tokenizer))
+    
     # Load data
+
+    if lora_args.lora:
+        rank0_print("Adding lora config")
+        rank0_print("==================")
+        lora_config = LoraConfig(
+            r=lora_args.lora_r,
+            lora_alpha=lora_args.lora_alpha,
+            target_modules=lora_args.lora_target_modules,
+            lora_dropout=lora_args.lora_dropout,
+            bias=lora_args.lora_bias,
+            task_type="CAUSAL_LM",
+        )
+
+        model = get_peft_model(model, lora_config)
+    
     data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args, conv=conv)
 
     # Start trainner
@@ -695,7 +798,7 @@ def train():
 
     if lora_args.lora:
         # check if zero3 mode enabled
-        if deepspeed.is_deepspeed_zero3_enabled():
+        if is_deepspeed_zero3_enabled():
             # use deepspeed engine internal function to gather state dict
             # state_dict_zero3 contains whole parameters of base and lora adapters
             # we will not extract lora parameters since peft save_pretrained will do that
@@ -729,4 +832,27 @@ if __name__ == "__main__":
             with importlib.resources.path("fastchat.deepspeed_configs", sys.argv[idx]) as path:
                 sys.argv[idx] = str(path)
 
-    train()
+    parser = transformers.HfArgumentParser(
+        (ModelArguments, DataArguments, TrainingArguments, LoraArguments)
+    )
+    model_args, data_args, training_args, lora_args = parser.parse_args_into_dataclasses()
+
+    local_rank = os.environ.get("SLURM_PROCID", os.environ.get("SLURM_PROCID", None))
+    if local_rank is None:
+        local_rank = training_args.local_rank
+    
+    local_rank = int(local_rank)
+
+    if model_args.update_model:
+        # Expect to run on a single process (rank 0 or -1). No DS/FSDP here.
+        saved_path = update_model(model_args, training_args)
+        print(saved_path)
+        # If you want to stop here (recommended):
+        sys.exit(0)
+        
+    rank0_print("MODEL ARGS: ", model_args)
+    rank0_print("DATA ARGS: ", data_args)
+    rank0_print("TRAINING ARGS: ", training_args)
+    rank0_print("LORA ARGS: ", lora_args)
+
+    train(model_args, data_args, training_args, lora_args)
