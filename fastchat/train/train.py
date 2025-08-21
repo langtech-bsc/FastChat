@@ -720,7 +720,7 @@ def update_model(model_args, training_args):
     else:
         save_dtype = torch.float32  # fallback
 
-    print("Saving model...:", out_dir)
+    print("Saving model...:", save_dtype, "--", out_dir)
     model.save_pretrained(
         base_dir,
         safe_serialization=True,
