@@ -716,10 +716,13 @@ def update_model(model_args, training_args):
     # with torch.no_grad():
     #     state_dict_cpu = {k: v.detach().cpu() for k, v in model.state_dict().items()}
 
-    if getattr(training_args, "bf16", False):
+
+    if getattr(training_args, "bf16", False) or True:
         save_dtype = torch.bfloat16
+        model = model.bfloat16()
     elif getattr(training_args, "fp16", False):
         save_dtype = torch.float16
+        model = model.half()
     else:
         save_dtype = torch.float32  # fallback
 
