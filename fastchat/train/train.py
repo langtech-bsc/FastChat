@@ -727,6 +727,7 @@ def update_model(model_args, training_args):
         save_dtype = torch.float32  # fallback
 
     print("Saving model...:", save_dtype, "--", out_dir)
+
     model.save_pretrained(
         base_dir,
         safe_serialization=True,
@@ -746,7 +747,7 @@ def update_model(model_args, training_args):
     return str(base_dir)
 
 
-def train(model_args, data_args, training_args, lora_args):
+def train_model(model_args, data_args, training_args, lora_args):
     # tokenizer path override (if provided)
     tokenizer, tokens_modified, conv = get_tokenizer(model_args=model_args)
 
@@ -862,7 +863,7 @@ def train(model_args, data_args, training_args, lora_args):
             trainer_save_model_safe(trainer)
 
 
-if __name__ == "__main__":
+def train():
     # If deepspeed os from package or outside of package.
     # When you install it by pip install ., it will add deepspeed_configs/* to the package so you can read it.
     # If you need to pass config file from current directory you can do: --deepspeed ./config.json
@@ -895,4 +896,6 @@ if __name__ == "__main__":
     rank0_print("TRAINING ARGS: ", training_args)
     rank0_print("LORA ARGS: ", lora_args)
 
-    train(model_args, data_args, training_args, lora_args)
+    train_model(model_args, data_args, training_args, lora_args)
+if __name__ == "__main__":
+    train()
