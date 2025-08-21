@@ -633,20 +633,20 @@ def update_model(model_args, training_args):
         dist.destroy_process_group()
 
     # 2) Scrub env so Accelerate/DS doesn't engage in this single-process path.
-    for k in ("ACCELERATE_USE_DEEPSPEED", "DEEPSPEED_CONFIG_FILE", "DEEPSPEED_ZERO_STAGE"):
-        os.environ.pop(k, None)
-    for k in list(os.environ):
-        if k.startswith(("OMPI_", "PMI_", "PMIX_", "MPI_")):
-            os.environ.pop(k, None)
+    # for k in ("ACCELERATE_USE_DEEPSPEED", "DEEPSPEED_CONFIG_FILE", "DEEPSPEED_ZERO_STAGE"):
+    #     os.environ.pop(k, None)
+    # for k in list(os.environ):
+    #     if k.startswith(("OMPI_", "PMI_", "PMIX_", "MPI_")):
+    #         os.environ.pop(k, None)
 
-    os.environ["ACCELERATE_DISABLE_WEIGHTS_INIT"] = "1"  # avoid accelerate zero-init
-    os.environ["CUDA_VISIBLE_DEVICES"] = os.environ.get("CUDA_VISIBLE_DEVICES", "0")
+    # os.environ["ACCELERATE_DISABLE_WEIGHTS_INIT"] = "1"  # avoid accelerate zero-init
+    # os.environ["CUDA_VISIBLE_DEVICES"] = os.environ.get("CUDA_VISIBLE_DEVICES", "0")
 
     # If you want to be extra-safe, also ensure this temp path doesn't use DS config:
-    try:
-        training_args.deepspeed = None
-    except Exception:
-        pass
+    # try:
+    #     training_args.deepspeed = None
+    # except Exception:
+    #     pass
 
     # ---- now do your tokenizer/config/model load ----
     tokenizer, tokens_modified, conv = get_tokenizer(model_args=model_args)
@@ -660,6 +660,7 @@ def update_model(model_args, training_args):
     )
     config.use_cache = False
 
+    print("Loading model...")
     model = transformers.AutoModelForCausalLM.from_pretrained(
         model_args.model_name_or_path,
         config=config,
@@ -698,14 +699,13 @@ def update_model(model_args, training_args):
     #     state_dict_cpu = {k: v.detach().cpu() for k, v in model.state_dict().items()}
 
     if getattr(training_args, "bf16", False):
-        model.to(torch.bfloat16)
         save_dtype = torch.bfloat16
     elif getattr(training_args, "fp16", False):
-        model.half()
         save_dtype = torch.float16
     else:
         save_dtype = torch.float32  # fallback
 
+    print("Saving model...:", out_dir)
     model.save_pretrained(
         base_dir,
         safe_serialization=True,
