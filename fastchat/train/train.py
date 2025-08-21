@@ -555,7 +555,7 @@ def make_supervised_data_module(
 
     return dict(train_dataset=train_dataset, eval_dataset=eval_dataset)
 
-def get_tokenizer(model_args):
+def get_tokenizer(model_args, training_args):
 
     tokenizer_name_or_path = model_args.model_name_or_path
     if model_args.tokenizer_name_or_path:
@@ -649,7 +649,7 @@ def update_model(model_args, training_args):
     #     pass
 
     # ---- now do your tokenizer/config/model load ----
-    tokenizer, tokens_modified, conv = get_tokenizer(model_args=model_args)
+    tokenizer, tokens_modified, conv = get_tokenizer(model_args=model_args, training_args=training_args)
     if not tokens_modified:
         return str(model_args.model_name_or_path)
     
@@ -749,7 +749,7 @@ def update_model(model_args, training_args):
 
 def train_model(model_args, data_args, training_args, lora_args):
     # tokenizer path override (if provided)
-    tokenizer, tokens_modified, conv = get_tokenizer(model_args=model_args)
+    tokenizer, tokens_modified, conv = get_tokenizer(model_args=model_args, training_args=training_args)
 
     # Set RoPE scaling factor
     config = transformers.AutoConfig.from_pretrained(
