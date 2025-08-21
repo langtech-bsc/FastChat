@@ -658,6 +658,21 @@ def update_model(model_args, training_args):
         cache_dir=training_args.cache_dir,
         trust_remote_code=model_args.trust_remote_code,
     )
+
+    target_ctx = training_args.model_max_length
+    orig_ctx_len = getattr(config, "max_position_embeddings", None)
+
+    # Evitar capado por sliding_window
+    if getattr(config, "sliding_window", None):
+        if config.sliding_window and config.sliding_window < target_ctx:
+            config.sliding_window = None  # o target_ctx
+
+    # RoPE scaling (solo si hace falta y no estaba ya seteado)
+    if orig_ctx_len and target_ctx and target_ctx > orig_ctx_len and not getattr(config, "rope_scaling", None):
+        factor = float(target_ctx) / float(orig_ctx_len)
+        config.rope_scaling = {"type": "linear", "factor": factor}
+        config.max_position_embeddings = target_ctx
+
     config.use_cache = False
 
     print("Loading model...")
@@ -741,14 +756,13 @@ def train(model_args, data_args, training_args, lora_args):
     # New add
     if getattr(config, "sliding_window", None):
         if config.sliding_window and config.sliding_window < target_ctx:
-            config.sliding_window = target_ctx
+            config.sliding_window = None #target_ctx
 
     if orig_ctx_len and  target_ctx > orig_ctx_len:
         scaling_factor = float(target_ctx) / float(orig_ctx_len) #float(math.ceil(training_args.model_max_length / orig_ctx_len))
         config.rope_scaling = {"type": "linear", "factor": scaling_factor} #{"type": "linear", "factor": scaling_factor}
         config.max_position_embeddings = target_ctx
     config.use_cache = False
-    
 
     # Load model
     model = transformers.AutoModelForCausalLM.from_pretrained(
