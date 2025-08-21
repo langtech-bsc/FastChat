@@ -665,8 +665,9 @@ def update_model(model_args, training_args):
         config=config,
         cache_dir=training_args.cache_dir,
         trust_remote_code=model_args.trust_remote_code,
-        low_cpu_mem_usage=False,   # force a plain (non-accelerate) load
-        device_map=None,           # don't shard
+        low_cpu_mem_usage=True,   # force a plain (non-accelerate) load
+        device_map=auto,           # don't shard
+        offload_folder="offload"
     )
     # --- 4) Apply tokenizer changes to weights + config ---
     if tokens_modified:
