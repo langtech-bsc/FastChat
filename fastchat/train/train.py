@@ -758,10 +758,13 @@ def train(model_args, data_args, training_args, lora_args):
         if config.sliding_window and config.sliding_window < target_ctx:
             config.sliding_window = None #target_ctx
 
+    print("target_ctx:", target_ctx)
+    print("orig_ctx_len:", orig_ctx_len)
     if orig_ctx_len and  target_ctx > orig_ctx_len:
         scaling_factor = float(target_ctx) / float(orig_ctx_len) #float(math.ceil(training_args.model_max_length / orig_ctx_len))
         config.rope_scaling = {"type": "linear", "factor": scaling_factor} #{"type": "linear", "factor": scaling_factor}
         config.max_position_embeddings = target_ctx
+        
     config.use_cache = False
 
     # Load model
