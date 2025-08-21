@@ -574,7 +574,7 @@ def get_tokenizer(model_args):
 
     unk_token = "<unk>"
     eos_token = '<|im_end|>'
-    start_token = '<|im_end|>'
+    start_token = '<|im_start|>'
     new_special_tokens = list(set([start_token, eos_token, unk_token]) - set(tokenizer.all_special_tokens))
 
 
@@ -736,11 +736,20 @@ def train(model_args, data_args, training_args, lora_args):
         trust_remote_code=model_args.trust_remote_code,
     )
     orig_ctx_len = getattr(config, "max_position_embeddings", None)
-    if orig_ctx_len and training_args.model_max_length > orig_ctx_len:
-        scaling_factor = float(math.ceil(training_args.model_max_length / orig_ctx_len))
-        config.rope_scaling = {"type": "linear", "factor": scaling_factor}
+    target_ctx = training_args.model_max_length
+    
+    # New add
+    if getattr(config, "sliding_window", None):
+        if config.sliding_window and config.sliding_window < target_ctx:
+            config.sliding_window = target_ctx
+
+    if orig_ctx_len and  target_ctx > orig_ctx_len:
+        scaling_factor = float(target_ctx) / float(orig_ctx_len) #float(math.ceil(training_args.model_max_length / orig_ctx_len))
+        config.rope_scaling = {"type": "dynamic", "factor": scaling_factor} #{"type": "linear", "factor": scaling_factor}
+        config.max_position_embeddings = target_ctx
     config.use_cache = False
     
+
     # Load model
     model = transformers.AutoModelForCausalLM.from_pretrained(
         model_args.model_name_or_path,
@@ -749,6 +758,13 @@ def train(model_args, data_args, training_args, lora_args):
         trust_remote_code=model_args.trust_remote_code,
     )
 
+    try:
+        model.generation_config.max_length = training_args.model_max_length
+        # Alinear IDs por si cambiaste tokens especiales
+        model.generation_config.pad_token_id = tokenizer.pad_token_id
+        model.generation_config.eos_token_id = tokenizer.eos_token_id
+    except Exception:
+        pass
 
     if tokens_modified:
         rank0_print("Tokens modified; resizing embeddings for base model")
