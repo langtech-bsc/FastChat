@@ -121,7 +121,7 @@ class TrainingArguments(transformers.TrainingArguments):
             "help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."
         },
     )
-
+    use_liger_kernel: bool = field(default=False, metadata={"help": "Enable MosaicML Liger fused kernels"})
 
 @dataclass
 class LoraArguments:
@@ -797,14 +797,18 @@ def train_model(model_args, data_args, training_args, lora_args):
     # if training_args.deepspeed is not None and training_args.local_rank == 0:
     #     model.print_trainable_parameters()
     
+    
+    
+    try:
+        from liger_kernel.transformers import apply_liger_kernel_to_model
+        apply_liger_kernel_to_model(model)
+        rank0_print("✅ Liger kernel applied")
+    except Exception as e:
+        rank0_print(f"⚠️ Liger kernel not applied: {e}")
+
     if lora_args.lora and training_args.gradient_checkpointing:
         model.enable_input_require_grads()
-    
-    # if tokens_modified:
-    #     model.resize_token_embeddings(len(tokenizer))
-    
-    # Load data
-
+        
     if lora_args.lora:
         rank0_print("Adding lora config")
         rank0_print("==================")
@@ -864,6 +868,7 @@ def train_model(model_args, data_args, training_args, lora_args):
 
 
 def train():
+    global local_rank
     # If deepspeed os from package or outside of package.
     # When you install it by pip install ., it will add deepspeed_configs/* to the package so you can read it.
     # If you need to pass config file from current directory you can do: --deepspeed ./config.json
