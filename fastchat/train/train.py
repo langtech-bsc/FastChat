@@ -254,6 +254,7 @@ def preprocess_bsc_chat(
         padding="max_length",
         max_length=tokenizer.model_max_length,
         truncation=True,
+        # add_special_tokens=False
     )
     input_ids = tok_output.input_ids
     att_masks = tok_output.attention_mask # Only used for ignoring truncated sequences.
@@ -269,12 +270,14 @@ def preprocess_bsc_chat(
             gemma_tok = type(tokenizer) == transformers.models.gemma.tokenization_gemma.GemmaTokenizer
             gemma_tok_fast = type(tokenizer) == transformers.models.gemma.tokenization_gemma_fast.GemmaTokenizerFast
             llama_tok_fast = type(tokenizer) == transformers.models.llama.tokenization_llama_fast.LlamaTokenizerFast # Mistral tokenizer
-            has_bos = target[0] in list(tokenizer.all_special_ids) # To debug
-            if gemma_tok or gemma_tok_fast or llama_tok_fast or has_bos:
+            has_bos = target[0] in list(tokenizer.all_special_ids) and tokenizer.tokenize(conversation)[0] != tokenizer.decode([target[0]])# To debug
+            if has_bos: #gemma_tok or gemma_tok_fast or llama_tok_fast
+                if local_rank == 0:
+                    print("gemma_tok:", gemma_tok , "gemma_tok_fast:", gemma_tok_fast, "llama_tok_fast:", llama_tok_fast, "has_bos:", has_bos)
+                    print("tokenizer adds bos token")
                 bos = 1 # Model's Tokenizer adds bos token
 
             cur_len = bos
-               
             splits = conversation.split(assistant_start)
             assistant_starts = [part + assistant_start for part in splits[:-1]]  # Add delimiter to all but the last part
             assistant_starts.append(splits[-1])
@@ -315,7 +318,7 @@ def preprocess_bsc_chat(
                 print(f"\nCONVERSATION:\n{conversation}\nOptimization in ---------->\n'{optimization}'\n")
                 optimization_printed = True
 
-            if cur_len < tokenizer.model_max_length:
+            if cur_len < tokenizer.model_max_length and local_rank == 0:
                 if cur_len != total_len:
                     target[:] = IGNORE_TOKEN_ID
                     print(
