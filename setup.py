@@ -11,7 +11,7 @@ setup(
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: Apache Software License",
     ],
-    python_requires=">=3.8",
+    python_requires=">=3.8,<3.13",
     packages=find_packages(include=["fastchat", "fastchat.*"]),
     install_requires=[
         "aiohttp",
@@ -36,7 +36,7 @@ setup(
         "protobuf"
     ],
     extras_require={
-        "model_worker": ["accelerate>=0.21", "peft", "sentencepiece", "torch", "transformers>=4.31.0,<=4.44.0", "protobuf"],
+        "model_worker": ["accelerate>=0.21", "peft=0.11", "sentencepiece", "torch", "transformers==4.45", "protobuf"],
         "webui": ["gradio>=4.10"],
         "train": ["einops", "deepspeed==0.14.4", "wandb", "mlflow", "flash-attn>=2.0"],
         "llm_judge": ["openai<1", "anthropic>=0.3", "ray"],

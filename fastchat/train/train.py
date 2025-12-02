@@ -16,7 +16,7 @@
 
 from dataclasses import dataclass, field
 import json
-import math
+import pdb
 import os, pathlib, gc, sys
 from typing import Dict, Optional, Sequence
 from enum import auto, IntEnum
@@ -144,6 +144,68 @@ class LoraArguments:
 
 local_rank = None
 
+def openai_to_sharegpt(openai_data:list) -> list:
+    """
+    Convert OpenAI format data to ShareGPT format.
+    
+    Args:
+        openai_data (list): List of dictionaries in OpenAI format
+        
+    Returns:
+        list: List of dictionaries in ShareGPT format
+    """
+    # Role mapping from OpenAI to ShareGPT
+    role_mapping = {
+        "user": "human",
+        "assistant": "gpt",
+        "system": "system"  # system role stays the same
+    }
+    
+    sharegpt_data = []
+    
+    for item in openai_data:
+        sharegpt_item = {}
+        
+        if "messages" in item:
+            conversations = []
+            for message in item["messages"]:
+                conversation = {
+                    "from": role_mapping.get(message["role"], message["role"]), # unexpected roles are keps the same
+                    "value": message["content"]
+                }
+                conversations.append(conversation)
+            
+            sharegpt_item["conversations"] = conversations
+        # Transfer additional keys
+        for key, value in item.items():
+            if key != "messages":
+                sharegpt_item[key] = value
+        
+        sharegpt_data.append(sharegpt_item)
+    
+    return sharegpt_data
+
+def load_paths(paths:list) -> list:
+    """Load list of paths to a list dictionary.
+
+    Args:
+        paths (list): List of paths of .jsonl (in OpenAI format) or .json (in ShareGPT format).
+
+    Returns:
+        list: List of instances in ShareGPT format
+    """
+    data = []
+    for path in paths:
+        if os.path.splitext(path)[-1] == ".json": # assuming ShareGPT format
+            with open(path, 'r') as f:
+                data += json.load(f)
+        elif os.path.splitext(path)[-1] == ".jsonl": # assuming OpenAI-API format
+            with open(path, 'r') as f:
+                openai_data = [json.loads(line.strip()) for line in f.readlines()]
+                data += openai_to_sharegpt(openai_data)
+        else:
+            raise ValueError(f"Unexpected file extension: '{os.path.splitext(path)[-1]}'")
+    return data
 
 def rank0_print(*args):
     if local_rank == 0:
@@ -492,41 +554,33 @@ def make_supervised_data_module(
     rank0_print('RAM memory % used:', psutil.virtual_memory()[2], '%')
     rank0_print('RAM Used (GB):', psutil.virtual_memory()[3]/1000000000)
 
-    tools = []
-    for tools_path in data_args.tools_paths if data_args.tools_paths else []:
-        data_loaded = json.load(open(tools_path, "r"))
-        tools += data_loaded
+    random.seed(SEED)
+
+    pdb.set_trace()
+    start_time = timeit.default_timer()
 
     add_tools = False
+    tools = load_paths(data_args.tools_paths) if data_args.tools_paths else []
+
     add_tools = len(tools) > 0
     narray = list(range(0, len(tools)))
     random.shuffle(narray)
     
-    random.seed(SEED)
-    start_time = timeit.default_timer()
-    train_json = []
-    eval_json = []
-    for data_path in data_args.data_paths: # BSC: To combine different data files
-        data_loaded = json.load(open(data_path, "r"))
-        if not data_args.eval_data_paths:
-            random.shuffle(data_loaded)
-            eval_length = int(len(data_loaded) * 0.05)
-            eval_json += data_loaded[:eval_length]
-            data_loaded = data_loaded[eval_length:]
-        
-        train_json += data_loaded
-    
+    train_json = load_paths(data_args.data_paths)
     random.shuffle(train_json)
-    # train_json = train_json[:500] # TODO: DELETE AFTER TESTS!!
 
+        
     if data_args.eval_data_paths:
-        eval_json = []
-        for eval_data_path in data_args.eval_data_paths: # BSC: To combine different data files
-            eval_json += json.load(open(eval_data_path, "r"))
-        eval_size = max(500, int(len(train_json) / 10)) # limiting size of eval dataset to 10% of train set
+        eval_json = load_paths(data_args.eval_data_paths)
+        random.shuffle(eval_json)
+        eval_size = int(len(train_json) / 10)  # limiting size of eval dataset to 10% of train set
         eval_json = eval_json[:eval_size]
+    else:
+        # Using 1% of train set for validaion
+        eval_index = int(len(train_json) * 0.01)
+        eval_json = train_json[:eval_index]
+        train_json = train_json[eval_index:]
 
-    random.shuffle(eval_json)
     if add_tools:
         print("ADDING tools to train data")
         j = 0
