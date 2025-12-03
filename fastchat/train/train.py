@@ -16,7 +16,6 @@
 
 from dataclasses import dataclass, field
 import json
-import pdb
 import os, pathlib, gc, sys
 from typing import Dict, Optional, Sequence
 from enum import auto, IntEnum
@@ -556,7 +555,6 @@ def make_supervised_data_module(
 
     random.seed(SEED)
 
-    pdb.set_trace()
     start_time = timeit.default_timer()
 
     add_tools = False
