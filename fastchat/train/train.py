@@ -312,7 +312,7 @@ def preprocess_bsc_chat(
     tok_output = tokenizer(
         conversations,
         return_tensors="pt",
-        padding="longest",
+        padding="max_length",
         max_length=tokenizer.model_max_length,
         truncation=True,
         # add_special_tokens=False
@@ -325,7 +325,7 @@ def preprocess_bsc_chat(
     # regex = conv.get_optimization_parts(tokenizer)
     assistant_start, end = conv.assistant_start, conv.sep2
     for j, (conversation, target) in enumerate(zip(conversations, targets)):
-        if 0 in att_masks[i]:
+        if int(att_masks[j].sum().item()) != tokenizer.model_max_length: 
             total_len = int(target.ne(tokenizer.pad_token_id).sum())
             bos = 0
             gemma_tok = type(tokenizer) == transformers.models.gemma.tokenization_gemma.GemmaTokenizer
