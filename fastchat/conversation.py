@@ -2298,9 +2298,18 @@ register_conv_template(
         {%- if loop.previtem and loop.previtem.role != "tool" -%}
             {{- '<|im_start|>tool\n' }}
         {%- endif -%}
-        {{- '<tool_response>\n' }} 
-            {{- message.content }}
-        {{- '\n</tool_response>\n' }}
+    
+        {%- set has_tool_name = message.name is defined and message.name is not none and (message.name | trim) != "" -%}
+    
+        {{- '<tool_response' -}}
+        {%- if has_tool_name -%}
+            {{- ' name="' + (message.name | trim) + '"' -}}
+        {%- endif -%}
+        {{- '>\n' -}}
+    
+        {{- message.content -}}
+        {{- '\n</tool_response>\n' -}}
+    
         {%- if loop.last or loop.nextitem.role != "tool" -%}
             {{- '<|im_end|>\n'}}
         {%- endif -%}
