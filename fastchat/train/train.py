@@ -312,7 +312,7 @@ def preprocess_bsc_chat(
     tok_output = tokenizer(
         conversations,
         return_tensors="pt",
-        padding="max_length",
+        padding="longest",
         max_length=tokenizer.model_max_length,
         truncation=True,
         # add_special_tokens=False
