@@ -168,11 +168,10 @@ def openai_to_sharegpt(openai_data:list) -> list:
         if "messages" in item:
             conversations = []
             for message in item["messages"]:
-                conversation = {
-                    "from": role_mapping.get(message["role"], message["role"]), # unexpected roles are keps the same
-                    "value": message["content"]
-                }
-                conversations.append(conversation)
+                role = message.pop("role")
+                message["from"] = role_mapping.get(role, role) # unexpected roles are keps the same
+                message["value"] = message.pop("content", "")
+                conversations.append(message)
             
             sharegpt_item["conversations"] = conversations
         # Transfer additional keys
