@@ -2218,7 +2218,7 @@ register_conv_template(
     {%- set messages = messages[1:] -%}
 {%- endif -%}
 
-{%- if not tool_prompt -%}
+{%- if tool_prompt is not defined or not tool_prompt -%}
     {%- set tool_prompt = "For each function call return a json object with function name and arguments within <tool_call> </tool_call> tags with the following schema:\n<tool_call>\n{\\\"name\\\": <function-name>, \\\"arguments\\\": <args-dict>}\n</tool_call>" -%}
 {%- endif -%}
 
@@ -2263,20 +2263,37 @@ register_conv_template(
     {%- else -%}
         {{- raise_exception("Invalid role detected: only 'user', 'assistant', or 'tool' roles are accepted.") }}
     {%- endif -%}
-    {%- if message.role == "user" or (message.role == "assistant" and message.tool_calls is not defined) -%}
-        {{- '<|im_start|>' + message.role + '\n' + message.content | trim + '<|im_end|>\n'}}
+    {%- if message.role == "user" -%}
+        {{- '<|im_start|>user\n' + (message.content | trim) + '<|im_end|>\n' }}
     {%- elif message.role == "assistant" -%}
-        {{- '<|im_start|>' + message.role }}
-        {%- for tool_call in message.tool_calls -%}
-            {{ '\n<tool_call>\n' }}
-              {%- if tool_call.function -%}
-                {"name": "{{ tool_call.function.name }}", "arguments": {{ tool_call.function.arguments | tojson }} }
-              {%- else -%}
-                {"name": "{{ tool_call.name }}", "arguments": {{ tool_call.arguments | tojson }} }
-              {%- endif -%}
-            {{ '\n</tool_call>' }}
-        {%- endfor -%}
-        {{- '<|im_end|>\n' }}
+        {{- '<|im_start|>assistant\n' -}}
+
+        {%- set has_content = message.content is defined and message.content is not none and (message.content | trim) != "" -%}
+        {%- set has_tool_calls = message.tool_calls is defined and message.tool_calls -%}
+
+        {%- if has_content -%}
+            {{- message.content | trim -}}
+            {%- if has_tool_calls -%}
+                {{- '\n' -}}
+            {%- endif -%}
+        {%- endif -%}
+
+        {%- if has_tool_calls -%}
+            {%- for tool_call in message.tool_calls -%}
+                {{- '<tool_call>\n' -}}
+                {%- if tool_call.function is defined and tool_call.function -%}
+                    {"name": "{{ tool_call.function.name }}", "arguments": {{ tool_call.function.arguments | tojson }} }
+                {%- else -%}
+                    {"name": "{{ tool_call.name }}", "arguments": {{ tool_call.arguments | tojson }} }
+                {%- endif -%}
+                {{- '\n</tool_call>' -}}
+                {%- if not loop.last -%}
+                    {{- '\n' -}}
+                {%- endif -%}
+            {%- endfor -%}
+        {%- endif -%}
+
+        {{- '<|im_end|>\n' -}}
     {%- elif message.role == "tool" -%}
         {%- if loop.previtem and loop.previtem.role != "tool" -%}
             {{- '<|im_start|>tool\n' }}
